@@ -19,8 +19,13 @@ public:
     void stop();
     void seek(qint64 milliseconds);
     void setRate(float rate);
+    void setVolume(int volume);
     void setVideoOutput(WId windowId);
 
+    qint64 time() const;
+    qint64 duration() const;
+    float rate() const;
+    int volume() const;
     bool isPlaying() const;
 
 signals:
