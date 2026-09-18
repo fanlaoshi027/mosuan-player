@@ -3,6 +3,7 @@
 #include <QWidget>
 #include "PlayerTool.h"
 
+class QHBoxLayout;
 class QPushButton;
 
 class PlayerToolbar final : public QWidget
