@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include "PlayerTool.h"
 
 class QPushButton;
 
@@ -13,7 +14,10 @@ public:
 signals:
     void openRequested();
     void playPauseRequested();
+    void toolChanged(PlayerTool tool);
 
 private:
+    void addToolButton(QHBoxLayout* layout, const QString& text, PlayerTool tool);
+
     QPushButton* m_playPause = nullptr;
 };
