@@ -26,22 +26,32 @@ bool VLCPlayer::open(const QString& path)
 
     libvlc_media_player_set_media(m_player, media);
     libvlc_media_release(media);
+    emit stateChanged();
     return true;
 }
 
 void VLCPlayer::play()
 {
-    if (m_player) libvlc_media_player_play(m_player);
+    if (m_player) {
+        libvlc_media_player_play(m_player);
+        emit stateChanged();
+    }
 }
 
 void VLCPlayer::pause()
 {
-    if (m_player) libvlc_media_player_set_pause(m_player, 1);
+    if (m_player) {
+        libvlc_media_player_set_pause(m_player, 1);
+        emit stateChanged();
+    }
 }
 
 void VLCPlayer::stop()
 {
-    if (m_player) libvlc_media_player_stop(m_player);
+    if (m_player) {
+        libvlc_media_player_stop(m_player);
+        emit stateChanged();
+    }
 }
 
 void VLCPlayer::seek(qint64 milliseconds)
@@ -51,7 +61,12 @@ void VLCPlayer::seek(qint64 milliseconds)
 
 void VLCPlayer::setRate(float rate)
 {
-    if (m_player) libvlc_media_player_set_rate(m_player, rate);
+    if (m_player && rate > 0.0f) libvlc_media_player_set_rate(m_player, rate);
+}
+
+void VLCPlayer::setVolume(int volume)
+{
+    if (m_player) libvlc_audio_set_volume(m_player, qBound(0, volume, 100));
 }
 
 void VLCPlayer::setVideoOutput(WId windowId)
@@ -64,6 +79,26 @@ void VLCPlayer::setVideoOutput(WId windowId)
 #else
     libvlc_media_player_set_xwindow(m_player, static_cast<uint32_t>(windowId));
 #endif
+}
+
+qint64 VLCPlayer::time() const
+{
+    return m_player ? libvlc_media_player_get_time(m_player) : 0;
+}
+
+qint64 VLCPlayer::duration() const
+{
+    return m_player ? libvlc_media_player_get_length(m_player) : 0;
+}
+
+float VLCPlayer::rate() const
+{
+    return m_player ? libvlc_media_player_get_rate(m_player) : 1.0f;
+}
+
+int VLCPlayer::volume() const
+{
+    return m_player ? libvlc_audio_get_volume(m_player) : 100;
 }
 
 bool VLCPlayer::isPlaying() const
