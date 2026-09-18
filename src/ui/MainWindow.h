@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include <memory>
 
+class QTimer;
 class VLCInstance;
 class VLCPlayer;
 class VideoWidget;
@@ -18,10 +19,16 @@ public:
 private slots:
     void openVideo();
     void togglePlayPause();
+    void updatePlaybackUi();
+    void seekVideo(qint64 milliseconds);
+    void setPlaybackRate(float rate);
+    void setVolume(int volume);
+    void toggleFullscreen();
 
 private:
     std::unique_ptr<VLCInstance> m_vlc;
     std::unique_ptr<VLCPlayer> m_player;
+    std::unique_ptr<QTimer> m_uiTimer;
     VideoWidget* m_video = nullptr;
     PlayerToolbar* m_toolbar = nullptr;
 };
