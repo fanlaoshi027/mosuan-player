@@ -7,12 +7,14 @@
 
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent),
-      m_vlc(std::make_unique<VLCInstance>())
+      m_vlc(std::make_unique<VLCInstance>()),
+      m_uiTimer(std::make_unique<QTimer>(this))
 {
     setWindowTitle(tr("Mosuan Player"));
     resize(1100, 700);
@@ -38,6 +40,14 @@ MainWindow::MainWindow(QWidget* parent)
 
     connect(m_toolbar, &PlayerToolbar::openRequested, this, &MainWindow::openVideo);
     connect(m_toolbar, &PlayerToolbar::playPauseRequested, this, &MainWindow::togglePlayPause);
+    connect(m_toolbar, &PlayerToolbar::seekRequested, this, &MainWindow::seekVideo);
+    connect(m_toolbar, &PlayerToolbar::rateChanged, this, &MainWindow::setPlaybackRate);
+    connect(m_toolbar, &PlayerToolbar::volumeChanged, this, &MainWindow::setVolume);
+    connect(m_toolbar, &PlayerToolbar::fullscreenRequested, this, &MainWindow::toggleFullscreen);
+
+    m_uiTimer->setInterval(250);
+    connect(m_uiTimer.get(), &QTimer::timeout, this, &MainWindow::updatePlaybackUi);
+    m_uiTimer->start();
 }
 
 MainWindow::~MainWindow() = default;
@@ -53,6 +63,7 @@ void MainWindow::openVideo()
     if (path.isEmpty() || !m_player) return;
 
     if (m_player->open(path)) {
+        m_player->setVideoOutput(m_video->nativeVideoId());
         m_player->play();
     } else {
         QMessageBox::warning(this, tr("打开失败"), tr("无法打开该视频。"));
@@ -66,5 +77,38 @@ void MainWindow::togglePlayPause()
         m_player->pause();
     } else {
         m_player->play();
+    }
+    updatePlaybackUi();
+}
+
+void MainWindow::updatePlaybackUi()
+{
+    if (!m_player || !m_toolbar) return;
+    m_toolbar->setDuration(m_player->duration());
+    m_toolbar->setPosition(m_player->time());
+    m_toolbar->setPlaying(m_player->isPlaying());
+}
+
+void MainWindow::seekVideo(qint64 milliseconds)
+{
+    if (m_player) m_player->seek(milliseconds);
+}
+
+void MainWindow::setPlaybackRate(float rate)
+{
+    if (m_player) m_player->setRate(rate);
+}
+
+void MainWindow::setVolume(int volume)
+{
+    if (m_player) m_player->setVolume(volume);
+}
+
+void MainWindow::toggleFullscreen()
+{
+    if (isFullScreen()) {
+        showNormal();
+    } else {
+        showFullScreen();
     }
 }
