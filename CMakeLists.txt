@@ -9,9 +9,6 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
-# LibVLC is intentionally discovered from the host installation.
-# Windows: set LIBVLC_ROOT to the LibVLC SDK directory.
-# macOS: install VLC/libVLC and set LIBVLC_ROOT if it is not in a standard path.
 if(DEFINED LIBVLC_ROOT)
     set(LIBVLC_INCLUDE_DIR "${LIBVLC_ROOT}/include")
     if(WIN32)
@@ -34,6 +31,8 @@ add_executable(MosuanPlayer
     src/core/vlc/VLCInstance.cpp
     src/core/vlc/VLCPlayer.h
     src/core/vlc/VLCPlayer.cpp
+    src/features/crop/CropRect.h
+    src/features/crop/CropRect.cpp
     src/ui/VideoWidget.h
     src/ui/VideoWidget.cpp
     src/ui/PlayerToolbar.h
