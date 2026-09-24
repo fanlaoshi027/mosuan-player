@@ -26,6 +26,8 @@ private slots:
     void toggleFullscreen();
 
 private:
+    void setupShortcuts();
+
     std::unique_ptr<VLCInstance> m_vlc;
     std::unique_ptr<VLCPlayer> m_player;
     std::unique_ptr<QTimer> m_uiTimer;
