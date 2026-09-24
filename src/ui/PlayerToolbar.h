@@ -16,6 +16,7 @@ public:
     void setDuration(qint64 milliseconds);
     void setPosition(qint64 milliseconds);
     void setPlaying(bool playing);
+    void setCropActive(bool active);
 
 signals:
     void openRequested();
@@ -32,6 +33,7 @@ private:
     static QString formatTime(qint64 milliseconds);
 
     QPushButton* m_playPause = nullptr;
+    QPushButton* m_crop = nullptr;
     QSlider* m_progress = nullptr;
     QSlider* m_volume = nullptr;
     QLabel* m_time = nullptr;
