@@ -28,7 +28,7 @@ PlayerToolbar::PlayerToolbar(QWidget* parent)
     m_volume->setValue(100);
     m_volume->setFixedWidth(80);
 
-    auto* crop = new QPushButton(tr("裁切"), this);
+    m_crop = new QPushButton(tr("裁切"), this);
     auto* smart = new QPushButton(tr("智能反色"), this);
     auto* fullscreen = new QPushButton(tr("全屏"), this);
 
@@ -38,7 +38,7 @@ PlayerToolbar::PlayerToolbar(QWidget* parent)
     layout->addWidget(m_time);
     layout->addWidget(m_rate);
     layout->addWidget(m_volume);
-    layout->addWidget(crop);
+    layout->addWidget(m_crop);
     layout->addWidget(smart);
     layout->addWidget(fullscreen);
 
@@ -61,7 +61,7 @@ PlayerToolbar::PlayerToolbar(QWidget* parent)
     });
     connect(m_volume, &QSlider::valueChanged, this, &PlayerToolbar::volumeChanged);
     connect(fullscreen, &QPushButton::clicked, this, &PlayerToolbar::fullscreenRequested);
-    connect(crop, &QPushButton::clicked, this, &PlayerToolbar::cropRequested);
+    connect(m_crop, &QPushButton::clicked, this, &PlayerToolbar::cropRequested);
     connect(smart, &QPushButton::clicked, this, &PlayerToolbar::smartInvertRequested);
 
     setStyleSheet(R"(
@@ -74,10 +74,12 @@ PlayerToolbar::PlayerToolbar(QWidget* parent)
             padding:8px 12px;
         }
         QPushButton:hover, QComboBox:hover { background:#303947; }
+        QPushButton:checked { background:#3a6ea5; }
         QLabel { color:#d9dee5; }
         QSlider::groove:horizontal { height:4px; background:#3a424e; border-radius:2px; }
         QSlider::handle:horizontal { width:12px; margin:-4px 0; border-radius:6px; background:#f2f5f8; }
     )");
+    m_crop->setCheckable(true);
 }
 
 void PlayerToolbar::setDuration(qint64 milliseconds)
@@ -98,6 +100,11 @@ void PlayerToolbar::setPosition(qint64 milliseconds)
 void PlayerToolbar::setPlaying(bool playing)
 {
     m_playPause->setText(playing ? tr("暂停") : tr("播放"));
+}
+
+void PlayerToolbar::setCropActive(bool active)
+{
+    m_crop->setChecked(active);
 }
 
 void PlayerToolbar::updateTimeLabel()
