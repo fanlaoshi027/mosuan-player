@@ -6,7 +6,9 @@
 #include "VideoWidget.h"
 
 #include <QFileDialog>
+#include <QKeySequence>
 #include <QMessageBox>
+#include <QShortcut>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -48,9 +50,28 @@ MainWindow::MainWindow(QWidget* parent)
     m_uiTimer->setInterval(250);
     connect(m_uiTimer.get(), &QTimer::timeout, this, &MainWindow::updatePlaybackUi);
     m_uiTimer->start();
+
+    setupShortcuts();
 }
 
 MainWindow::~MainWindow() = default;
+
+void MainWindow::setupShortcuts()
+{
+    auto* space = new QShortcut(QKeySequence(Qt::Key_Space), this);
+    connect(space, &QShortcut::activated, this, &MainWindow::togglePlayPause);
+
+    auto* fullscreen = new QShortcut(QKeySequence(Qt::Key_F), this);
+    connect(fullscreen, &QShortcut::activated, this, &MainWindow::toggleFullscreen);
+
+    auto* escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    connect(escape, &QShortcut::activated, this, [this] {
+        if (isFullScreen()) showNormal();
+    });
+
+    auto* open = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_O), this);
+    connect(open, &QShortcut::activated, this, &MainWindow::openVideo);
+}
 
 void MainWindow::openVideo()
 {
