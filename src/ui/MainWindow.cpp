@@ -46,6 +46,10 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_toolbar, &PlayerToolbar::rateChanged, this, &MainWindow::setPlaybackRate);
     connect(m_toolbar, &PlayerToolbar::volumeChanged, this, &MainWindow::setVolume);
     connect(m_toolbar, &PlayerToolbar::fullscreenRequested, this, &MainWindow::toggleFullscreen);
+    connect(m_toolbar, &PlayerToolbar::cropRequested, this, [this] {
+        m_video->setCropMode(!m_video->cropMode());
+        m_toolbar->setCropActive(m_video->cropMode());
+    });
 
     m_uiTimer->setInterval(250);
     connect(m_uiTimer.get(), &QTimer::timeout, this, &MainWindow::updatePlaybackUi);
@@ -76,11 +80,8 @@ void MainWindow::setupShortcuts()
 void MainWindow::openVideo()
 {
     const QString path = QFileDialog::getOpenFileName(
-        this,
-        tr("打开视频"),
-        QString(),
+        this, tr("打开视频"), QString(),
         tr("视频文件 (*.mp4 *.mkv *.mov *.avi *.webm);;所有文件 (*)"));
-
     if (path.isEmpty() || !m_player) return;
 
     if (m_player->open(path)) {
@@ -94,11 +95,8 @@ void MainWindow::openVideo()
 void MainWindow::togglePlayPause()
 {
     if (!m_player) return;
-    if (m_player->isPlaying()) {
-        m_player->pause();
-    } else {
-        m_player->play();
-    }
+    if (m_player->isPlaying()) m_player->pause();
+    else m_player->play();
     updatePlaybackUi();
 }
 
@@ -127,9 +125,6 @@ void MainWindow::setVolume(int volume)
 
 void MainWindow::toggleFullscreen()
 {
-    if (isFullScreen()) {
-        showNormal();
-    } else {
-        showFullScreen();
-    }
+    if (isFullScreen()) showNormal();
+    else showFullScreen();
 }
