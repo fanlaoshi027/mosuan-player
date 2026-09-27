@@ -49,17 +49,17 @@ MainWindow::MainWindow(QWidget* parent)
 
     connect(m_toolbar, &PlayerToolbar::cropRequested, this, [this] {
         if (!m_video || !m_player) return;
-
         const bool enable = !m_video->cropMode();
         m_video->setCropMode(enable);
         m_toolbar->setCropActive(enable);
-
         if (!enable) {
-            // Turning crop mode off also removes the actual VLC crop.
             m_video->resetCrop();
             m_player->resetCrop();
         }
     });
+
+    connect(m_toolbar, &PlayerToolbar::smartInvertRequested,
+            this, &MainWindow::toggleSmartInvert);
 
     connect(m_video, &VideoWidget::cropChanged, this, [this](const QRectF& rect) {
         if (m_player && m_video && m_video->cropMode()) {
@@ -103,6 +103,7 @@ void MainWindow::openVideo()
     m_video->setCropMode(false);
     m_video->resetCrop();
     m_toolbar->setCropActive(false);
+    setSmartInvertEnabled(false);
 
     if (m_player->open(path)) {
         m_player->setVideoOutput(m_video->nativeVideoId());
@@ -147,4 +148,27 @@ void MainWindow::toggleFullscreen()
 {
     if (isFullScreen()) showNormal();
     else showFullScreen();
+}
+
+void MainWindow::toggleSmartInvert()
+{
+    setSmartInvertEnabled(!m_smartInvert);
+}
+
+void MainWindow::setSmartInvertEnabled(bool enabled)
+{
+    m_smartInvert = enabled;
+    if (!m_video) return;
+
+    // Keep the effect at the video-widget level so it can later be combined
+    // with the exclusion rectangle without changing VLC decoding.
+    m_video->setProperty("smartInvert", enabled);
+    m_video->update();
+}
+
+void MainWindow::applyVideoDisplayGeometry()
+{
+    // Reserved for aspect-ratio-aware video geometry. VLC owns the native
+    // video surface; this hook keeps display geometry separate from crop state.
+    if (m_video) m_video->update();
 }
