@@ -50,6 +50,9 @@ MainWindow::MainWindow(QWidget* parent)
         m_video->setCropMode(!m_video->cropMode());
         m_toolbar->setCropActive(m_video->cropMode());
     });
+    connect(m_video, &VideoWidget::cropChanged, this, [this](const QRectF& rect) {
+        if (m_player) m_player->setCropRect(rect);
+    });
 
     m_uiTimer->setInterval(250);
     connect(m_uiTimer.get(), &QTimer::timeout, this, &MainWindow::updatePlaybackUi);
