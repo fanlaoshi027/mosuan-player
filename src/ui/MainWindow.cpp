@@ -46,12 +46,25 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_toolbar, &PlayerToolbar::rateChanged, this, &MainWindow::setPlaybackRate);
     connect(m_toolbar, &PlayerToolbar::volumeChanged, this, &MainWindow::setVolume);
     connect(m_toolbar, &PlayerToolbar::fullscreenRequested, this, &MainWindow::toggleFullscreen);
+
     connect(m_toolbar, &PlayerToolbar::cropRequested, this, [this] {
-        m_video->setCropMode(!m_video->cropMode());
-        m_toolbar->setCropActive(m_video->cropMode());
+        if (!m_video || !m_player) return;
+
+        const bool enable = !m_video->cropMode();
+        m_video->setCropMode(enable);
+        m_toolbar->setCropActive(enable);
+
+        if (!enable) {
+            // Turning crop mode off also removes the actual VLC crop.
+            m_video->resetCrop();
+            m_player->resetCrop();
+        }
     });
+
     connect(m_video, &VideoWidget::cropChanged, this, [this](const QRectF& rect) {
-        if (m_player) m_player->setCropRect(rect);
+        if (m_player && m_video && m_video->cropMode()) {
+            m_player->setCropRect(rect);
+        }
     });
 
     m_uiTimer->setInterval(250);
@@ -86,6 +99,10 @@ void MainWindow::openVideo()
         this, tr("打开视频"), QString(),
         tr("视频文件 (*.mp4 *.mkv *.mov *.avi *.webm);;所有文件 (*)"));
     if (path.isEmpty() || !m_player) return;
+
+    m_video->setCropMode(false);
+    m_video->resetCrop();
+    m_toolbar->setCropActive(false);
 
     if (m_player->open(path)) {
         m_player->setVideoOutput(m_video->nativeVideoId());
