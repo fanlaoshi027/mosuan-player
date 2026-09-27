@@ -90,8 +90,8 @@ void VLCPlayer::setCropRect(const QRectF& normalizedRect)
 {
     if (!m_player) return;
 
-    const int width = static_cast<int>(libvlc_video_get_width(m_player));
-    const int height = static_cast<int>(libvlc_video_get_height(m_player));
+    const int width = videoWidth();
+    const int height = videoHeight();
     if (width <= 0 || height <= 0) return;
 
     const QRectF r = normalizedRect.normalized().intersected(QRectF(0.0, 0.0, 1.0, 1.0));
@@ -134,6 +134,22 @@ float VLCPlayer::rate() const
 int VLCPlayer::volume() const
 {
     return m_player ? libvlc_audio_get_volume(m_player) : 100;
+}
+
+int VLCPlayer::videoWidth() const
+{
+    unsigned width = 0;
+    unsigned height = 0;
+    if (m_player) libvlc_video_get_size(m_player, 0, &width, &height);
+    return static_cast<int>(width);
+}
+
+int VLCPlayer::videoHeight() const
+{
+    unsigned width = 0;
+    unsigned height = 0;
+    if (m_player) libvlc_video_get_size(m_player, 0, &width, &height);
+    return static_cast<int>(height);
 }
 
 bool VLCPlayer::isPlaying() const
