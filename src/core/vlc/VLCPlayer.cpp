@@ -1,6 +1,7 @@
 #include "VLCPlayer.h"
 #include "VLCInstance.h"
 
+#include <QByteArray>
 #include <QString>
 #include <QtMath>
 
@@ -14,9 +15,7 @@ VLCPlayer::VLCPlayer(VLCInstance* instance, QObject* parent)
 
 VLCPlayer::~VLCPlayer()
 {
-    if (m_player) {
-        libvlc_media_player_release(m_player);
-    }
+    if (m_player) libvlc_media_player_release(m_player);
 }
 
 bool VLCPlayer::open(const QString& path)
@@ -101,19 +100,14 @@ void VLCPlayer::setCropRect(const QRectF& normalizedRect)
     const int cropHeight = qBound(1, qRound(r.height() * height), height - y);
 
     const QString geometry = QStringLiteral("%1x%2+%3+%4")
-        .arg(cropWidth)
-        .arg(cropHeight)
-        .arg(x)
-        .arg(y);
+        .arg(cropWidth).arg(cropHeight).arg(x).arg(y);
     const QByteArray utf8 = geometry.toUtf8();
     libvlc_video_set_crop_geometry(m_player, utf8.constData());
 }
 
 void VLCPlayer::resetCrop()
 {
-    if (m_player) {
-        libvlc_video_set_crop_geometry(m_player, nullptr);
-    }
+    if (m_player) libvlc_video_set_crop_geometry(m_player, nullptr);
 }
 
 qint64 VLCPlayer::time() const
