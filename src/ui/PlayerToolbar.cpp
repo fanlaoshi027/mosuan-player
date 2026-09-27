@@ -80,6 +80,11 @@ PlayerToolbar::PlayerToolbar(QWidget* parent)
         QSlider::handle:horizontal { width:12px; margin:-4px 0; border-radius:6px; background:#f2f5f8; }
     )");
     m_crop->setCheckable(true);
+    smart->setCheckable(true);
+    connect(smart, &QPushButton::toggled, this, [this](bool enabled) {
+        Q_UNUSED(enabled);
+        emit smartInvertRequested();
+    });
 }
 
 void PlayerToolbar::setDuration(qint64 milliseconds)
