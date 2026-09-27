@@ -1,6 +1,8 @@
 #include "VLCPlayer.h"
 #include "VLCInstance.h"
 
+#include <QString>
+
 VLCPlayer::VLCPlayer(VLCInstance* instance, QObject* parent)
     : QObject(parent), m_instance(instance)
 {
@@ -26,6 +28,7 @@ bool VLCPlayer::open(const QString& path)
 
     libvlc_media_player_set_media(m_player, media);
     libvlc_media_release(media);
+    resetCrop();
     emit stateChanged();
     return true;
 }
@@ -50,6 +53,7 @@ void VLCPlayer::stop()
 {
     if (m_player) {
         libvlc_media_player_stop(m_player);
+        resetCrop();
         emit stateChanged();
     }
 }
@@ -79,6 +83,36 @@ void VLCPlayer::setVideoOutput(WId windowId)
 #else
     libvlc_media_player_set_xwindow(m_player, static_cast<uint32_t>(windowId));
 #endif
+}
+
+void VLCPlayer::setCropRect(const QRectF& normalizedRect)
+{
+    if (!m_player) return;
+
+    const int width = static_cast<int>(libvlc_video_get_width(m_player));
+    const int height = static_cast<int>(libvlc_video_get_height(m_player));
+    if (width <= 0 || height <= 0) return;
+
+    const QRectF r = normalizedRect.normalized().intersected(QRectF(0.0, 0.0, 1.0, 1.0));
+    const int x = qBound(0, qRound(r.left() * width), width - 1);
+    const int y = qBound(0, qRound(r.top() * height), height - 1);
+    const int cropWidth = qBound(1, qRound(r.width() * width), width - x);
+    const int cropHeight = qBound(1, qRound(r.height() * height), height - y);
+
+    const QString geometry = QStringLiteral("%1x%2+%3+%4")
+        .arg(cropWidth)
+        .arg(cropHeight)
+        .arg(x)
+        .arg(y);
+    const QByteArray utf8 = geometry.toUtf8();
+    libvlc_video_set_crop_geometry(m_player, utf8.constData());
+}
+
+void VLCPlayer::resetCrop()
+{
+    if (m_player) {
+        libvlc_video_set_crop_geometry(m_player, nullptr);
+    }
 }
 
 qint64 VLCPlayer::time() const
