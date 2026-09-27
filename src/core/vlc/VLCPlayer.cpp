@@ -37,6 +37,9 @@ void VLCPlayer::play()
 {
     if (m_player) {
         libvlc_media_player_play(m_player);
+        // Video dimensions may only become available after playback starts.
+        // Re-apply here so a future persisted crop is not lost.
+        if (m_cropEnabled) applyCropGeometry();
         emit stateChanged();
     }
 }
@@ -83,30 +86,46 @@ void VLCPlayer::setVideoOutput(WId windowId)
 #else
     libvlc_media_player_set_xwindow(m_player, static_cast<uint32_t>(windowId));
 #endif
+
+    if (m_cropEnabled) applyCropGeometry();
 }
 
 void VLCPlayer::setCropRect(const QRectF& normalizedRect)
 {
     if (!m_player) return;
 
+    const QRectF r = normalizedRect.normalized().intersected(QRectF(0.0, 0.0, 1.0, 1.0));
+    if (r.width() <= 0.0 || r.height() <= 0.0) return;
+
+    m_cropRect = r;
+    m_cropEnabled = !r.contains(QRectF(0.0, 0.0, 1.0, 1.0)) ||
+                    r != QRectF(0.0, 0.0, 1.0, 1.0);
+    applyCropGeometry();
+}
+
+bool VLCPlayer::applyCropGeometry()
+{
+    if (!m_player || !m_cropEnabled) return false;
+
     const int width = videoWidth();
     const int height = videoHeight();
-    if (width <= 0 || height <= 0) return;
+    if (width <= 0 || height <= 0) return false;
 
-    const QRectF r = normalizedRect.normalized().intersected(QRectF(0.0, 0.0, 1.0, 1.0));
+    const QRectF r = m_cropRect.normalized().intersected(QRectF(0.0, 0.0, 1.0, 1.0));
     const int x = qBound(0, qRound(r.left() * width), width - 1);
     const int y = qBound(0, qRound(r.top() * height), height - 1);
     const int cropWidth = qBound(1, qRound(r.width() * width), width - x);
     const int cropHeight = qBound(1, qRound(r.height() * height), height - y);
 
-    const QString geometry = QStringLiteral("%1x%2+%3+%4")
-        .arg(cropWidth).arg(cropHeight).arg(x).arg(y);
-    const QByteArray utf8 = geometry.toUtf8();
-    libvlc_video_set_crop_geometry(m_player, utf8.constData());
+    const QByteArray geometry = QStringLiteral("%1x%2+%3+%4")
+        .arg(cropWidth).arg(cropHeight).arg(x).arg(y).toUtf8();
+    return libvlc_video_set_crop_geometry(m_player, geometry.constData()) == 0;
 }
 
 void VLCPlayer::resetCrop()
 {
+    m_cropRect = QRectF(0.0, 0.0, 1.0, 1.0);
+    m_cropEnabled = false;
     if (m_player) libvlc_video_set_crop_geometry(m_player, nullptr);
 }
 
