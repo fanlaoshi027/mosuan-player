@@ -37,6 +37,10 @@ signals:
     void stateChanged();
 
 private:
+    bool applyCropGeometry();
+
     VLCInstance* m_instance = nullptr;
     libvlc_media_player_t* m_player = nullptr;
+    QRectF m_cropRect{0.0, 0.0, 1.0, 1.0};
+    bool m_cropEnabled = false;
 };
