@@ -27,10 +27,19 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
 
 private:
+    enum class CropHandle { None, Move, TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left };
+
     QPointF toNormalized(const QPointF& point) const;
+    QPointF toPixels(const QPointF& point) const;
+    CropHandle hitTest(const QPointF& pixelPoint) const;
+    void updateCursor(CropHandle handle);
+    void updateCropFromPointer(const QPointF& normalizedPoint);
 
     bool m_cropMode = false;
     bool m_draggingCrop = false;
     QPointF m_cropStart;
     QRectF m_cropRect{0.0, 0.0, 1.0, 1.0};
+    QRectF m_dragStartRect;
+    QPointF m_dragStartPoint;
+    CropHandle m_activeHandle = CropHandle::None;
 };
