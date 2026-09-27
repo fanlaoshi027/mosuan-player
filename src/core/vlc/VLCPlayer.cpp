@@ -2,6 +2,7 @@
 #include "VLCInstance.h"
 
 #include <QString>
+#include <QtMath>
 
 VLCPlayer::VLCPlayer(VLCInstance* instance, QObject* parent)
     : QObject(parent), m_instance(instance)
