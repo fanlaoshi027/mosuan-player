@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QRectF>
 #include <QString>
 #include <vlc/vlc.h>
 
@@ -21,6 +22,8 @@ public:
     void setRate(float rate);
     void setVolume(int volume);
     void setVideoOutput(WId windowId);
+    void setCropRect(const QRectF& normalizedRect);
+    void resetCrop();
 
     qint64 time() const;
     qint64 duration() const;
