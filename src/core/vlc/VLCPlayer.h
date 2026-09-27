@@ -29,6 +29,8 @@ public:
     qint64 duration() const;
     float rate() const;
     int volume() const;
+    int videoWidth() const;
+    int videoHeight() const;
     bool isPlaying() const;
 
 signals:
