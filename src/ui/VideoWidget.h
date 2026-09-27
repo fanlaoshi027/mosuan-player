@@ -19,6 +19,7 @@ public:
 
 signals:
     void cropChanged(const QRectF& normalizedRect);
+    void cropCommitted(const QRectF& normalizedRect);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
