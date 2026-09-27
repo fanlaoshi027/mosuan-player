@@ -36,6 +36,7 @@ void VideoWidget::resetCrop()
     m_draggingCrop = false;
     m_activeHandle = CropHandle::None;
     emit cropChanged(m_cropRect);
+    emit cropCommitted(m_cropRect);
     update();
 }
 
@@ -223,6 +224,7 @@ void VideoWidget::mouseReleaseEvent(QMouseEvent* event)
 
     m_draggingCrop = false;
     emit cropChanged(m_cropRect);
+    emit cropCommitted(m_cropRect);
     updateCursor(hitTest(event->position()));
     update();
 }
