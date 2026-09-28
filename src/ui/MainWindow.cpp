@@ -46,7 +46,24 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_player.get(), &VLCPlayer::playbackEnded, this, &MainWindow::playNextItem);
     connect(m_player.get(), &VLCPlayer::frameReady, this, [this](const QImage& frame) {
         if (!m_framePipeline || !m_smartInvert || !m_video) return;
-        m_video->setProcessedFrame(m_framePipeline->process(frame));
+
+        QImage processed = m_framePipeline->process(frame);
+
+        // In processed-frame mode VLC cannot apply its native crop geometry.
+        // Crop the already processed frame here, while keeping protectedRect
+        // defined in original video coordinates.
+        const auto* profile = m_profiles->find(m_currentPath);
+        if (profile && profile->cropEnabled && !profile->cropRect.isNull()) {
+            const QRectF r = profile->cropRect.normalized().intersected(QRectF(0, 0, 1, 1));
+            if (r.width() < 0.999 || r.height() < 0.999) {
+                const int x = qBound(0, qRound(r.left() * processed.width()), processed.width() - 1);
+                const int y = qBound(0, qRound(r.top() * processed.height()), processed.height() - 1);
+                const int w = qBound(1, qRound(r.width() * processed.width()), processed.width() - x);
+                const int h = qBound(1, qRound(r.height() * processed.height()), processed.height() - y);
+                processed = processed.copy(x, y, w, h);
+            }
+        }
+        m_video->setProcessedFrame(processed);
     });
 
     connect(m_toolbar, &PlayerToolbar::openRequested, this, &MainWindow::openVideo);
