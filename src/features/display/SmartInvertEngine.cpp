@@ -10,6 +10,8 @@ QImage SmartInvertEngine::process(const QImage& source,
     if (source.isNull()) return source;
     if (!enabled && protectedRect.isEmpty()) return source;
 
+    // Performance-first path: integer-only per-pixel work. Avoid floating
+    // point/luma analysis because this function may run for every video frame.
     QImage image = source.convertToFormat(QImage::Format_ARGB32);
     const QRectF normalized = protectedRect.normalized().intersected(QRectF(0, 0, 1, 1));
     const bool hasProtected = !normalized.isEmpty() && normalized.width() > 0 && normalized.height() > 0;
@@ -22,29 +24,26 @@ QImage SmartInvertEngine::process(const QImage& source,
 
     for (int y = 0; y < image.height(); ++y) {
         QRgb* row = reinterpret_cast<QRgb*>(image.scanLine(y));
+        const bool rowProtected = hasProtected && y >= top && y < bottom;
+
         for (int x = 0; x < image.width(); ++x) {
-            const bool protectedPixel = hasProtected && x >= left && x < right && y >= top && y < bottom;
-            QRgb& pixel = row[x];
-            const int a = qAlpha(pixel);
-            int r = qRed(pixel);
-            int g = qGreen(pixel);
-            int b = qBlue(pixel);
+            QRgb p = row[x];
+            const bool protectedPixel = rowProtected && x >= left && x < right;
 
             if (enabled && !protectedPixel) {
-                // Luma-aware inversion: preserve chroma relationships better than a raw 255-RGB inversion.
-                const int luma = (299 * r + 587 * g + 114 * b) / 1000;
-                const int invLuma = 255 - luma;
-                const double ratio = luma > 4 ? static_cast<double>(invLuma) / luma : 1.0;
-                r = qBound(0, qRound(r * ratio), 255);
-                g = qBound(0, qRound(g * ratio), 255);
-                b = qBound(0, qRound(b * ratio), 255);
+                // Fast RGB inversion. No floating point and no per-pixel luma calculation.
+                row[x] = qRgba(255 - qRed(p),
+                               255 - qGreen(p),
+                               255 - qBlue(p),
+                               qAlpha(p));
             } else if (protectedPixel && brightness < 100) {
-                r = r * brightness / 100;
-                g = g * brightness / 100;
-                b = b * brightness / 100;
+                row[x] = qRgba(qRed(p) * brightness / 100,
+                               qGreen(p) * brightness / 100,
+                               qBlue(p) * brightness / 100,
+                               qAlpha(p));
             }
-            pixel = qRgba(r, g, b, a);
         }
     }
+
     return image;
 }
