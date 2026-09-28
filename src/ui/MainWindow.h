@@ -32,10 +32,12 @@ private slots:
     void setVolume(int volume);
     void toggleFullscreen();
     void toggleSmartInvert();
+    void playNextItem();
 
 private:
     void setupShortcuts();
     void setupPlaylistUi(QWidget* central);
+    void refreshPlaylistWidget();
     void loadVideoPath(const QString& path);
     void applyVideoProfile(const QString& path);
     void applyVideoDisplayGeometry();
