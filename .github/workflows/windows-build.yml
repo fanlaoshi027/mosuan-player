@@ -1,0 +1,85 @@
+name: Windows Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt 6
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install aqtinstall
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O "$env:GITHUB_WORKSPACE\qt"
+
+      - name: Download VLC runtime
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://download.videolan.org/pub/videolan/vlc/3.0.24/win64/vlc-3.0.24-win64.zip" -OutFile "$env:RUNNER_TEMP\vlc.zip"
+          Expand-Archive "$env:RUNNER_TEMP\vlc.zip" -DestinationPath "$env:RUNNER_TEMP\vlc"
+          $root = Get-ChildItem "$env:RUNNER_TEMP\vlc" -Directory | Select-Object -First 1
+          "VLC_ROOT=$($root.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Download VLC headers
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://download.videolan.org/pub/videolan/vlc/3.0.24/vlc-3.0.24.tar.xz" -OutFile "$env:RUNNER_TEMP\vlc-src.tar.xz"
+          7z x "$env:RUNNER_TEMP\vlc-src.tar.xz" -o"$env:RUNNER_TEMP\vlc-src" | Out-Null
+          7z x "$env:RUNNER_TEMP\vlc-src\vlc-3.0.24.tar" -o"$env:RUNNER_TEMP\vlc-src-extracted" | Out-Null
+          $src = Get-ChildItem "$env:RUNNER_TEMP\vlc-src-extracted" -Directory | Select-Object -First 1
+          "VLC_INCLUDE=$($src.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Create MSVC import library for libvlc
+        shell: cmd
+        run: |
+          dumpbin /exports "%VLC_ROOT%\libvlc.dll" > "%RUNNER_TEMP%\libvlc-exports.txt"
+          powershell -NoProfile -Command "$lines = Get-Content '%RUNNER_TEMP%\libvlc-exports.txt'; $out = @('EXPORTS'); foreach ($l in $lines) { if ($l -match '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(libvlc_[A-Za-z0-9_]+)\s*$') { $out += $matches[1] } }; Set-Content '%RUNNER_TEMP%\libvlc.def' $out"
+          lib /def:"%RUNNER_TEMP%\libvlc.def" /machine:x64 /out:"%RUNNER_TEMP%\libvlc.lib"
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $qtBin = "$env:GITHUB_WORKSPACE\qt\6.8.3\msvc2022_64\bin"
+          $env:PATH = "$qtBin;$env:PATH"
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\qt\6.8.3\msvc2022_64" `
+            -DLIBVLC_ROOT="$env:RUNNER_TEMP\libvlc-sdk"
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\libvlc-sdk\include" | Out-Null
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\libvlc-sdk\lib" | Out-Null
+          Copy-Item "$env:VLC_INCLUDE\include\vlc" "$env:RUNNER_TEMP\libvlc-sdk\include" -Recurse
+          Copy-Item "$env:RUNNER_TEMP\libvlc.lib" "$env:RUNNER_TEMP\libvlc-sdk\lib\libvlc.lib"
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\qt\6.8.3\msvc2022_64" `
+            -DLIBVLC_ROOT="$env:RUNNER_TEMP\libvlc-sdk"
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config Release --parallel
+
+      - name: Package Windows app
+        shell: pwsh
+        run: |
+          $stage = "$env:GITHUB_WORKSPACE\package\MosuanPlayer"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item "$env:GITHUB_WORKSPACE\build\Release\MosuanPlayer.exe" $stage
+          $qtBin = "$env:GITHUB_WORKSPACE\qt\6.8.3\msvc2022_64\bin"
+          & "$qtBin\windeployqt.exe" --release --no-translations "$stage\MosuanPlayer.exe"
+          Copy-Item "$env:VLC_ROOT\libvlc.dll" $stage
+          Copy-Item "$env:VLC_ROOT\libvlccore.dll" $stage
+          Copy-Item "$env:VLC_ROOT\plugins" "$stage\plugins" -Recurse
+          Compress-Archive -Path "$stage\*" -DestinationPath "$env:GITHUB_WORKSPACE\MosuanPlayer-Windows-x64.zip" -Force
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MosuanPlayer-Windows-x64
+          path: MosuanPlayer-Windows-x64.zip
+          if-no-files-found: error
