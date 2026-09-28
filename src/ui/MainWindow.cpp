@@ -52,7 +52,14 @@ MainWindow::MainWindow(QWidget* parent)
         const bool enable = !m_video->cropMode();
         m_video->setCropMode(enable);
         m_toolbar->setCropActive(enable);
-        if (!enable) m_player->resetCrop();
+        if (!enable) {
+            m_player->resetCrop();
+            if (!m_currentPath.isEmpty()) {
+                auto& profile = m_profiles->profileFor(m_currentPath);
+                profile.cropEnabled = false;
+                m_profiles->save();
+            }
+        }
     });
     connect(m_toolbar, &PlayerToolbar::smartInvertRequested, this, &MainWindow::toggleSmartInvert);
     connect(m_video, &VideoWidget::cropChanged, this, [this](const QRectF& rect) {
@@ -61,6 +68,7 @@ MainWindow::MainWindow(QWidget* parent)
         auto& profile = m_profiles->profileFor(m_currentPath);
         profile.cropRect = rect;
         profile.cropEnabled = rect.width() < 0.999 || rect.height() < 0.999;
+        m_profiles->save();
     });
 
     m_uiTimer->setInterval(250);
@@ -69,7 +77,10 @@ MainWindow::MainWindow(QWidget* parent)
     setupShortcuts();
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow()
+{
+    if (m_profiles) m_profiles->save();
+}
 
 void MainWindow::setupPlaylistUi(QWidget* central)
 {
@@ -213,7 +224,10 @@ void MainWindow::toggleSmartInvert() { setSmartInvertEnabled(!m_smartInvert); }
 void MainWindow::setSmartInvertEnabled(bool enabled)
 {
     m_smartInvert = enabled;
-    if (!m_currentPath.isEmpty()) m_profiles->profileFor(m_currentPath).smartInvert = enabled;
+    if (!m_currentPath.isEmpty()) {
+        m_profiles->profileFor(m_currentPath).smartInvert = enabled;
+        m_profiles->save();
+    }
     if (m_video) { m_video->setProperty("smartInvert", enabled); m_video->update(); }
 }
 
