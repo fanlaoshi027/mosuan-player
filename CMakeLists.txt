@@ -38,6 +38,8 @@ add_executable(MosuanPlayer
     src/features/profile/VideoProfile.h
     src/features/profile/VideoProfileStore.h
     src/features/profile/VideoProfileStore.cpp
+    src/features/network/NetworkMediaSource.h
+    src/features/network/NetworkMediaSource.cpp
     src/features/display/SmartInvertController.h
     src/features/display/SmartInvertController.cpp
     src/features/display/SmartInvertEngine.h
