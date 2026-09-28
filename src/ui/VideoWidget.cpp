@@ -40,6 +40,18 @@ void VideoWidget::resetCrop()
     update();
 }
 
+void VideoWidget::setProcessedFrame(const QImage& frame)
+{
+    m_processedFrame = frame;
+    update();
+}
+
+void VideoWidget::clearProcessedFrame()
+{
+    m_processedFrame = QImage();
+    update();
+}
+
 QPointF VideoWidget::toNormalized(const QPointF& point) const
 {
     if (width() <= 0 || height() <= 0) return {};
@@ -142,10 +154,21 @@ void VideoWidget::updateCropFromPointer(const QPointF& p)
 
 void VideoWidget::paintEvent(QPaintEvent* event)
 {
-    QWidget::paintEvent(event);
+    Q_UNUSED(event);
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    painter.fillRect(rect(), QColor(16, 19, 24));
+
+    if (!m_processedFrame.isNull()) {
+        const QSize scaled = m_processedFrame.size().scaled(size(), Qt::KeepAspectRatio);
+        const QRect target((width() - scaled.width()) / 2,
+                           (height() - scaled.height()) / 2,
+                           scaled.width(), scaled.height());
+        painter.drawImage(target, m_processedFrame);
+    }
+
     if (!m_cropMode) return;
 
-    QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     const QRectF pixelRect(m_cropRect.left() * width(), m_cropRect.top() * height(),
                            m_cropRect.width() * width(), m_cropRect.height() * height());
