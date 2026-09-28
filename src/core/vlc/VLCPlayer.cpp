@@ -10,12 +10,34 @@ VLCPlayer::VLCPlayer(VLCInstance* instance, QObject* parent)
 {
     if (m_instance && m_instance->instance()) {
         m_player = libvlc_media_player_new(m_instance->instance());
+        if (m_player) {
+            m_eventManager = libvlc_media_player_event_manager(m_player);
+            if (m_eventManager) {
+                libvlc_event_attach(m_eventManager, libvlc_MediaPlayerEndReached,
+                                    &VLCPlayer::vlcEventCallback, this);
+            }
+        }
     }
 }
 
 VLCPlayer::~VLCPlayer()
 {
+    if (m_eventManager) {
+        libvlc_event_detach(m_eventManager, libvlc_MediaPlayerEndReached,
+                            &VLCPlayer::vlcEventCallback, this);
+    }
     if (m_player) libvlc_media_player_release(m_player);
+}
+
+void VLCPlayer::vlcEventCallback(const libvlc_event_t* event, void* userdata)
+{
+    if (!event || !userdata) return;
+    if (event->type != libvlc_MediaPlayerEndReached) return;
+    auto* self = static_cast<VLCPlayer*>(userdata);
+    QMetaObject::invokeMethod(self, [self] {
+        emit self->playbackEnded();
+        emit self->stateChanged();
+    }, Qt::QueuedConnection);
 }
 
 bool VLCPlayer::open(const QString& path)
@@ -37,8 +59,6 @@ void VLCPlayer::play()
 {
     if (m_player) {
         libvlc_media_player_play(m_player);
-        // Video dimensions may only become available after playback starts.
-        // Re-apply here so a future persisted crop is not lost.
         if (m_cropEnabled) applyCropGeometry();
         emit stateChanged();
     }
@@ -86,37 +106,30 @@ void VLCPlayer::setVideoOutput(WId windowId)
 #else
     libvlc_media_player_set_xwindow(m_player, static_cast<uint32_t>(windowId));
 #endif
-
     if (m_cropEnabled) applyCropGeometry();
 }
 
 void VLCPlayer::setCropRect(const QRectF& normalizedRect)
 {
     if (!m_player) return;
-
     const QRectF r = normalizedRect.normalized().intersected(QRectF(0.0, 0.0, 1.0, 1.0));
     if (r.width() <= 0.0 || r.height() <= 0.0) return;
-
     m_cropRect = r;
-    m_cropEnabled = !r.contains(QRectF(0.0, 0.0, 1.0, 1.0)) ||
-                    r != QRectF(0.0, 0.0, 1.0, 1.0);
+    m_cropEnabled = r != QRectF(0.0, 0.0, 1.0, 1.0);
     applyCropGeometry();
 }
 
 bool VLCPlayer::applyCropGeometry()
 {
     if (!m_player || !m_cropEnabled) return false;
-
     const int width = videoWidth();
     const int height = videoHeight();
     if (width <= 0 || height <= 0) return false;
-
     const QRectF r = m_cropRect.normalized().intersected(QRectF(0.0, 0.0, 1.0, 1.0));
     const int x = qBound(0, qRound(r.left() * width), width - 1);
     const int y = qBound(0, qRound(r.top() * height), height - 1);
     const int cropWidth = qBound(1, qRound(r.width() * width), width - x);
     const int cropHeight = qBound(1, qRound(r.height() * height), height - y);
-
     const QByteArray geometry = QStringLiteral("%1x%2+%3+%4")
         .arg(cropWidth).arg(cropHeight).arg(x).arg(y).toUtf8();
     return libvlc_video_set_crop_geometry(m_player, geometry.constData()) == 0;
@@ -129,38 +142,21 @@ void VLCPlayer::resetCrop()
     if (m_player) libvlc_video_set_crop_geometry(m_player, nullptr);
 }
 
-qint64 VLCPlayer::time() const
-{
-    return m_player ? libvlc_media_player_get_time(m_player) : 0;
-}
-
-qint64 VLCPlayer::duration() const
-{
-    return m_player ? libvlc_media_player_get_length(m_player) : 0;
-}
-
-float VLCPlayer::rate() const
-{
-    return m_player ? libvlc_media_player_get_rate(m_player) : 1.0f;
-}
-
-int VLCPlayer::volume() const
-{
-    return m_player ? libvlc_audio_get_volume(m_player) : 100;
-}
+qint64 VLCPlayer::time() const { return m_player ? libvlc_media_player_get_time(m_player) : 0; }
+qint64 VLCPlayer::duration() const { return m_player ? libvlc_media_player_get_length(m_player) : 0; }
+float VLCPlayer::rate() const { return m_player ? libvlc_media_player_get_rate(m_player) : 1.0f; }
+int VLCPlayer::volume() const { return m_player ? libvlc_audio_get_volume(m_player) : 100; }
 
 int VLCPlayer::videoWidth() const
 {
-    unsigned width = 0;
-    unsigned height = 0;
+    unsigned width = 0, height = 0;
     if (m_player) libvlc_video_get_size(m_player, 0, &width, &height);
     return static_cast<int>(width);
 }
 
 int VLCPlayer::videoHeight() const
 {
-    unsigned width = 0;
-    unsigned height = 0;
+    unsigned width = 0, height = 0;
     if (m_player) libvlc_video_get_size(m_player, 0, &width, &height);
     return static_cast<int>(height);
 }
