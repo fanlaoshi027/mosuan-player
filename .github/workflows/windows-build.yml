@@ -23,27 +23,26 @@ jobs:
       - name: Download VLC runtime
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://download.videolan.org/pub/videolan/vlc/3.0.24/win64/vlc-3.0.24-win64.zip" -OutFile "$env:RUNNER_TEMP\vlc.zip"
-          Expand-Archive "$env:RUNNER_TEMP\vlc.zip" -DestinationPath "$env:RUNNER_TEMP\vlc"
-          $root = Get-ChildItem "$env:RUNNER_TEMP\vlc" -Directory | Select-Object -First 1
+          $vlcZip = "$env:RUNNER_TEMP\vlc.zip"
+          $vlcDir = "$env:RUNNER_TEMP\vlc"
+          Invoke-WebRequest -Uri "https://download.videolan.org/pub/videolan/vlc/3.0.24/win64/vlc-3.0.24-win64.zip" -OutFile $vlcZip
+          Expand-Archive $vlcZip -DestinationPath $vlcDir -Force
+          $root = Get-ChildItem $vlcDir -Directory | Select-Object -First 1
           if (-not $root) { throw "VLC runtime directory was not found" }
           "VLC_ROOT=$($root.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Download VLC headers
+      - name: Download VLC source headers
         shell: pwsh
         run: |
           $archive = "$env:RUNNER_TEMP\vlc-src.tar.xz"
-          $xzDir = "$env:RUNNER_TEMP\vlc-src-xz"
-          $extractDir = "$env:RUNNER_TEMP\vlc-src-extracted"
+          $extractDir = "$env:RUNNER_TEMP\vlc-src"
           Invoke-WebRequest -Uri "https://download.videolan.org/pub/videolan/vlc/3.0.24/vlc-3.0.24.tar.xz" -OutFile $archive
-          Remove-Item $xzDir,$extractDir -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force $xzDir,$extractDir | Out-Null
-          7z x $archive -o$xzDir | Out-Null
-          $tar = Get-ChildItem $xzDir -Filter "*.tar" -File | Select-Object -First 1
-          if (-not $tar) { throw "VLC tar archive was not produced by xz extraction" }
-          7z x $tar.FullName -o$extractDir | Out-Null
-          $src = Get-ChildItem $extractDir -Directory | Where-Object { Test-Path "$($_.FullName)\include\vlc\vlc.h" } | Select-Object -First 1
-          if (-not $src) { throw "VLC include/vlc/vlc.h was not found after extraction" }
+          Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $extractDir | Out-Null
+          tar -xJf $archive -C $extractDir
+          $src = Get-ChildItem $extractDir -Directory | Select-Object -First 1
+          if (-not $src) { throw "VLC source directory was not found after extraction" }
+          if (-not (Test-Path "$($src.FullName)\include\vlc\vlc.h")) { throw "VLC include/vlc/vlc.h was not found" }
           "VLC_INCLUDE=$($src.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Create MSVC import library for libvlc
