@@ -32,6 +32,7 @@ MainWindow::MainWindow(QWidget* parent)
     auto* central = new QWidget(this);
     setupPlaylistUi(central);
     setCentralWidget(central);
+    refreshPlaylistWidget();
 
     if (!m_vlc->initialize()) {
         QMessageBox::critical(this, tr("Mosuan Player"), tr("LibVLC 初始化失败，请检查 LibVLC 安装。"));
@@ -40,6 +41,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     m_player = std::make_unique<VLCPlayer>(m_vlc.get(), this);
     m_player->setVideoOutput(m_video->nativeVideoId());
+    connect(m_player.get(), &VLCPlayer::playbackEnded, this, &MainWindow::playNextItem);
 
     connect(m_toolbar, &PlayerToolbar::openRequested, this, &MainWindow::openVideo);
     connect(m_toolbar, &PlayerToolbar::playPauseRequested, this, &MainWindow::togglePlayPause);
@@ -80,6 +82,7 @@ MainWindow::MainWindow(QWidget* parent)
 MainWindow::~MainWindow()
 {
     if (m_profiles) m_profiles->save();
+    if (m_playlist) m_playlist->save();
 }
 
 void MainWindow::setupPlaylistUi(QWidget* central)
@@ -134,6 +137,18 @@ void MainWindow::setupPlaylistUi(QWidget* central)
     )");
 }
 
+void MainWindow::refreshPlaylistWidget()
+{
+    if (!m_playlistWidget || !m_playlist) return;
+    m_playlistWidget->clear();
+    for (const QString& path : m_playlist->items())
+        m_playlistWidget->addItem(QFileInfo(path).fileName());
+    if (!m_currentPath.isEmpty()) {
+        const int index = m_playlist->indexOf(m_currentPath);
+        if (index >= 0) m_playlistWidget->setCurrentRow(index);
+    }
+}
+
 void MainWindow::setupShortcuts()
 {
     auto* space = new QShortcut(QKeySequence(Qt::Key_Space), this);
@@ -152,8 +167,7 @@ void MainWindow::openVideo()
         tr("视频文件 (*.mp4 *.mkv *.mov *.avi *.webm);;所有文件 (*)"));
     if (path.isEmpty()) return;
     m_playlist->add(path);
-    m_playlistWidget->clear();
-    for (const QString& item : m_playlist->items()) m_playlistWidget->addItem(QFileInfo(item).fileName());
+    refreshPlaylistWidget();
     loadVideoPath(path);
 }
 
@@ -163,8 +177,7 @@ void MainWindow::openVideos()
         tr("视频文件 (*.mp4 *.mkv *.mov *.avi *.webm);;所有文件 (*)"));
     if (paths.isEmpty()) return;
     for (const QString& path : paths) m_playlist->add(path);
-    m_playlistWidget->clear();
-    for (const QString& item : m_playlist->items()) m_playlistWidget->addItem(QFileInfo(item).fileName());
+    refreshPlaylistWidget();
     if (m_currentPath.isEmpty()) loadVideoPath(paths.first());
 }
 
@@ -186,8 +199,20 @@ void MainWindow::loadVideoPath(const QString& path)
     m_player->setVideoOutput(m_video->nativeVideoId());
     m_player->play();
     applyVideoProfile(path);
-    const int index = m_playlist->indexOf(path);
-    if (index >= 0) m_playlistWidget->setCurrentRow(index);
+    refreshPlaylistWidget();
+}
+
+void MainWindow::playNextItem()
+{
+    if (!m_playlist || !m_playlistWidget || m_playlist->size() == 0) return;
+    const int current = m_playlist->indexOf(m_currentPath);
+    const int next = current + 1;
+    if (current >= 0 && next < m_playlist->size()) {
+        loadVideoPath(m_playlist->at(next));
+    } else {
+        refreshPlaylistWidget();
+        updatePlaybackUi();
+    }
 }
 
 void MainWindow::applyVideoProfile(const QString& path)
