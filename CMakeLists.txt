@@ -33,6 +33,11 @@ add_executable(MosuanPlayer
     src/core/vlc/VLCPlayer.cpp
     src/features/crop/CropRect.h
     src/features/crop/CropRect.cpp
+    src/features/playlist/PlaylistModel.h
+    src/features/playlist/PlaylistModel.cpp
+    src/features/profile/VideoProfile.h
+    src/features/profile/VideoProfileStore.h
+    src/features/profile/VideoProfileStore.cpp
     src/ui/VideoWidget.h
     src/ui/VideoWidget.cpp
     src/ui/PlayerToolbar.h
@@ -41,15 +46,9 @@ add_executable(MosuanPlayer
     src/ui/MainWindow.cpp
 )
 
-target_include_directories(MosuanPlayer PRIVATE
-    src
-    ${LIBVLC_INCLUDE_DIR}
-)
+target_include_directories(MosuanPlayer PRIVATE src ${LIBVLC_INCLUDE_DIR})
 
-target_link_libraries(MosuanPlayer PRIVATE
-    Qt6::Widgets
-    ${LIBVLC_LIBRARY}
-)
+target_link_libraries(MosuanPlayer PRIVATE Qt6::Widgets ${LIBVLC_LIBRARY})
 
 if(WIN32)
     set_target_properties(MosuanPlayer PROPERTIES WIN32_EXECUTABLE TRUE)
