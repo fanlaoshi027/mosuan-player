@@ -35,12 +35,15 @@ public:
 
 signals:
     void stateChanged();
+    void playbackEnded();
 
 private:
+    static void vlcEventCallback(const libvlc_event_t* event, void* userdata);
     bool applyCropGeometry();
 
     VLCInstance* m_instance = nullptr;
     libvlc_media_player_t* m_player = nullptr;
+    libvlc_event_manager_t* m_eventManager = nullptr;
     QRectF m_cropRect{0.0, 0.0, 1.0, 1.0};
     bool m_cropEnabled = false;
 };
