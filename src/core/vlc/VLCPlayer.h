@@ -2,7 +2,9 @@
 
 #include <QObject>
 #include <QRectF>
-#include <QString>
+#include <QImage>
+#include <QMutex>
+#include <QByteArray>
 #include <vlc/vlc.h>
 
 class VLCInstance;
@@ -25,6 +27,10 @@ public:
     void setCropRect(const QRectF& normalizedRect);
     void resetCrop();
 
+    // Opt-in frame path. Native VLC output remains the default for performance.
+    void setFrameProcessingEnabled(bool enabled);
+    bool frameProcessingEnabled() const { return m_frameProcessingEnabled; }
+
     qint64 time() const;
     qint64 duration() const;
     float rate() const;
@@ -36,9 +42,17 @@ public:
 signals:
     void stateChanged();
     void playbackEnded();
+    void frameReady(const QImage& frame);
 
 private:
     static void vlcEventCallback(const libvlc_event_t* event, void* userdata);
+    static void* frameLock(void* userdata, void** planes);
+    static void frameUnlock(void* userdata, void* picture, void* const* planes);
+    static void frameDisplay(void* userdata, void* picture);
+    static unsigned frameFormat(void** userdata, char* chroma,
+                                unsigned* width, unsigned* height,
+                                unsigned* pitches, unsigned* lines);
+    void configureFrameCallbacks(bool enabled);
     bool applyCropGeometry();
 
     VLCInstance* m_instance = nullptr;
@@ -46,4 +60,11 @@ private:
     libvlc_event_manager_t* m_eventManager = nullptr;
     QRectF m_cropRect{0.0, 0.0, 1.0, 1.0};
     bool m_cropEnabled = false;
+
+    bool m_frameProcessingEnabled = false;
+    QMutex m_frameMutex;
+    QByteArray m_frameBuffer;
+    unsigned m_frameWidth = 0;
+    unsigned m_frameHeight = 0;
+    unsigned m_framePitch = 0;
 };
