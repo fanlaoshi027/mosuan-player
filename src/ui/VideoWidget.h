@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QImage>
 #include <QPointF>
 #include <QRectF>
 #include <QWidget>
@@ -16,6 +17,11 @@ public:
     bool cropMode() const { return m_cropMode; }
     QRectF cropRect() const { return m_cropRect; }
     void resetCrop();
+
+    // Used only by the opt-in processed-frame path.
+    void setProcessedFrame(const QImage& frame);
+    void clearProcessedFrame();
+    bool hasProcessedFrame() const { return !m_processedFrame.isNull(); }
 
 signals:
     void cropChanged(const QRectF& normalizedRect);
@@ -43,4 +49,5 @@ private:
     QRectF m_dragStartRect;
     QPointF m_dragStartPoint;
     CropHandle m_activeHandle = CropHandle::None;
+    QImage m_processedFrame;
 };
