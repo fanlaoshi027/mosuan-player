@@ -64,6 +64,8 @@ private:
     bool m_frameProcessingEnabled = false;
     QMutex m_frameMutex;
     QByteArray m_frameBuffer;
+    QImage m_pendingFrame;
+    bool m_frameDispatchPending = false;
     unsigned m_frameWidth = 0;
     unsigned m_frameHeight = 0;
     unsigned m_framePitch = 0;
