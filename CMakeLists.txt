@@ -42,6 +42,8 @@ add_executable(MosuanPlayer
     src/features/display/SmartInvertController.cpp
     src/features/display/SmartInvertEngine.h
     src/features/display/SmartInvertEngine.cpp
+    src/features/display/VideoFramePipeline.h
+    src/features/display/VideoFramePipeline.cpp
     src/ui/VideoWidget.h
     src/ui/VideoWidget.cpp
     src/ui/PlayerToolbar.h
