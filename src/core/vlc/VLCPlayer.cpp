@@ -99,6 +99,7 @@ void VLCPlayer::setVolume(int volume)
 
 void VLCPlayer::setVideoOutput(WId windowId)
 {
+    m_videoOutputWindow = windowId;
     if (!m_player || m_frameProcessingEnabled) return;
 #ifdef _WIN32
     libvlc_media_player_set_hwnd(m_player, reinterpret_cast<void*>(windowId));
@@ -166,9 +167,7 @@ void* VLCPlayer::frameLock(void* userdata, void** planes)
 {
     if (!userdata || !planes) return nullptr;
     auto* self = static_cast<VLCPlayer*>(userdata);
-    self->m_frameMutex.lock();
     if (self->m_frameBuffer.isEmpty()) {
-        self->m_frameMutex.unlock();
         *planes = nullptr;
         return nullptr;
     }
@@ -179,7 +178,6 @@ void* VLCPlayer::frameLock(void* userdata, void** planes)
 void VLCPlayer::frameUnlock(void* userdata, void* /*picture*/, void* const* /*planes*/)
 {
     Q_UNUSED(userdata);
-    // The buffer remains locked until frameDisplay() finishes copying the frame.
 }
 
 void VLCPlayer::frameDisplay(void* userdata, void* /*picture*/)
@@ -190,10 +188,7 @@ void VLCPlayer::frameDisplay(void* userdata, void* /*picture*/)
     const unsigned height = self->m_frameHeight;
     const unsigned pitch = self->m_framePitch;
 
-    if (width == 0 || height == 0 || pitch == 0 || self->m_frameBuffer.isEmpty()) {
-        self->m_frameMutex.unlock();
-        return;
-    }
+    if (width == 0 || height == 0 || pitch == 0 || self->m_frameBuffer.isEmpty()) return;
 
     QImage frame(reinterpret_cast<const uchar*>(self->m_frameBuffer.constData()),
                  static_cast<int>(width), static_cast<int>(height),
@@ -202,15 +197,12 @@ void VLCPlayer::frameDisplay(void* userdata, void* /*picture*/)
 
     bool schedule = false;
     {
-        // Keep only the newest frame. This prevents the GUI event queue from
-        // accumulating 60 callbacks/second when processing/display is slower.
         QMutexLocker locker(&self->m_frameMutex);
         self->m_pendingFrame = std::move(copy);
         if (!self->m_frameDispatchPending) {
             self->m_frameDispatchPending = true;
             schedule = true;
         }
-        self->m_frameMutex.unlock();
     }
 
     if (schedule) {
