@@ -4,6 +4,7 @@
 #include "../core/vlc/VLCPlayer.h"
 #include "../features/playlist/PlaylistModel.h"
 #include "../features/profile/VideoProfileStore.h"
+#include "../features/display/VideoFramePipeline.h"
 #include "PlayerToolbar.h"
 #include "VideoWidget.h"
 
@@ -24,7 +25,8 @@ MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), m_vlc(std::make_unique<VLCInstance>()),
       m_uiTimer(std::make_unique<QTimer>(this)),
       m_playlist(std::make_unique<PlaylistModel>()),
-      m_profiles(std::make_unique<VideoProfileStore>())
+      m_profiles(std::make_unique<VideoProfileStore>()),
+      m_framePipeline(std::make_unique<VideoFramePipeline>())
 {
     setWindowTitle(tr("Mosuan Player"));
     resize(1200, 760);
@@ -42,6 +44,10 @@ MainWindow::MainWindow(QWidget* parent)
     m_player = std::make_unique<VLCPlayer>(m_vlc.get(), this);
     m_player->setVideoOutput(m_video->nativeVideoId());
     connect(m_player.get(), &VLCPlayer::playbackEnded, this, &MainWindow::playNextItem);
+    connect(m_player.get(), &VLCPlayer::frameReady, this, [this](const QImage& frame) {
+        if (!m_framePipeline || !m_smartInvert || !m_video) return;
+        m_video->setProcessedFrame(m_framePipeline->process(frame));
+    });
 
     connect(m_toolbar, &PlayerToolbar::openRequested, this, &MainWindow::openVideo);
     connect(m_toolbar, &PlayerToolbar::playPauseRequested, this, &MainWindow::togglePlayPause);
@@ -66,7 +72,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_toolbar, &PlayerToolbar::smartInvertRequested, this, &MainWindow::toggleSmartInvert);
     connect(m_video, &VideoWidget::cropChanged, this, [this](const QRectF& rect) {
         if (!m_player || m_currentPath.isEmpty()) return;
-        m_player->setCropRect(rect);
+        if (!m_smartInvert) m_player->setCropRect(rect);
         auto& profile = m_profiles->profileFor(m_currentPath);
         profile.cropRect = rect;
         profile.cropEnabled = rect.width() < 0.999 || rect.height() < 0.999;
@@ -221,8 +227,18 @@ void MainWindow::applyVideoProfile(const QString& path)
     m_video->setCropMode(false);
     m_toolbar->setCropActive(false);
     m_player->resetCrop();
+    m_video->clearProcessedFrame();
+
+    if (profile) {
+        m_framePipeline->setProtectedRect(profile->protectedRect);
+        m_framePipeline->setProtectedBrightness(profile->protectedBrightness);
+    } else {
+        m_framePipeline->setProtectedRect(QRectF());
+        m_framePipeline->setProtectedBrightness(100);
+    }
+
     setSmartInvertEnabled(profile && profile->smartInvert);
-    if (profile && profile->cropEnabled) m_player->setCropRect(profile->cropRect);
+    if (profile && profile->cropEnabled && !m_smartInvert) m_player->setCropRect(profile->cropRect);
 }
 
 void MainWindow::togglePlayPause()
@@ -249,11 +265,16 @@ void MainWindow::toggleSmartInvert() { setSmartInvertEnabled(!m_smartInvert); }
 void MainWindow::setSmartInvertEnabled(bool enabled)
 {
     m_smartInvert = enabled;
+    m_framePipeline->setEnabled(enabled);
+    if (m_player) m_player->setFrameProcessingEnabled(enabled);
+    if (m_video) {
+        if (!enabled) m_video->clearProcessedFrame();
+        m_video->update();
+    }
     if (!m_currentPath.isEmpty()) {
         m_profiles->profileFor(m_currentPath).smartInvert = enabled;
         m_profiles->save();
     }
-    if (m_video) { m_video->setProperty("smartInvert", enabled); m_video->update(); }
 }
 
 void MainWindow::applyVideoDisplayGeometry() { if (m_video) m_video->update(); }
