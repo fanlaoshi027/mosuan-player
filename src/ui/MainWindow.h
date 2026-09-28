@@ -13,6 +13,7 @@ class VideoWidget;
 class PlayerToolbar;
 class PlaylistModel;
 class VideoProfileStore;
+class VideoFramePipeline;
 
 class MainWindow final : public QMainWindow
 {
@@ -48,6 +49,7 @@ private:
     std::unique_ptr<QTimer> m_uiTimer;
     std::unique_ptr<PlaylistModel> m_playlist;
     std::unique_ptr<VideoProfileStore> m_profiles;
+    std::unique_ptr<VideoFramePipeline> m_framePipeline;
     VideoWidget* m_video = nullptr;
     PlayerToolbar* m_toolbar = nullptr;
     QListWidget* m_playlistWidget = nullptr;
