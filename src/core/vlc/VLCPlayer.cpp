@@ -2,8 +2,11 @@
 #include "VLCInstance.h"
 
 #include <QByteArray>
+#include <QMetaObject>
+#include <QMutexLocker>
 #include <QString>
 #include <QtMath>
+#include <cstring>
 
 VLCPlayer::VLCPlayer(VLCInstance* instance, QObject* parent)
     : QObject(parent), m_instance(instance)
@@ -98,7 +101,7 @@ void VLCPlayer::setVolume(int volume)
 
 void VLCPlayer::setVideoOutput(WId windowId)
 {
-    if (!m_player) return;
+    if (!m_player || m_frameProcessingEnabled) return;
 #ifdef _WIN32
     libvlc_media_player_set_hwnd(m_player, reinterpret_cast<void*>(windowId));
 #elif defined(__APPLE__)
@@ -107,6 +110,108 @@ void VLCPlayer::setVideoOutput(WId windowId)
     libvlc_media_player_set_xwindow(m_player, static_cast<uint32_t>(windowId));
 #endif
     if (m_cropEnabled) applyCropGeometry();
+}
+
+void VLCPlayer::setFrameProcessingEnabled(bool enabled)
+{
+    if (m_frameProcessingEnabled == enabled) return;
+    const bool wasPlaying = isPlaying();
+    if (wasPlaying && m_player) libvlc_media_player_stop(m_player);
+
+    m_frameProcessingEnabled = enabled;
+    configureFrameCallbacks(enabled);
+
+    if (wasPlaying && m_player) libvlc_media_player_play(m_player);
+    emit stateChanged();
+}
+
+void VLCPlayer::configureFrameCallbacks(bool enabled)
+{
+    if (!m_player) return;
+    if (enabled) {
+        // RV32 gives us one 32-bit pixel per source pixel and avoids YUV conversion
+        // in our own processing path. This path is opt-in; native VLC output stays default.
+        libvlc_video_set_callbacks(m_player,
+                                   &VLCPlayer::frameLock,
+                                   &VLCPlayer::frameUnlock,
+                                   &VLCPlayer::frameDisplay,
+                                   this);
+        libvlc_video_set_format_callbacks(m_player, &VLCPlayer::frameFormat, this);
+    } else {
+        libvlc_video_set_callbacks(m_player, nullptr, nullptr, nullptr, nullptr);
+        libvlc_video_set_format_callbacks(m_player, nullptr, nullptr);
+        QMutexLocker locker(&m_frameMutex);
+        m_frameBuffer.clear();
+        m_frameWidth = m_frameHeight = m_framePitch = 0;
+    }
+}
+
+unsigned VLCPlayer::frameFormat(void** userdata, char* chroma,
+                                unsigned* width, unsigned* height,
+                                unsigned* pitches, unsigned* lines)
+{
+    if (!userdata || !*userdata || !chroma || !width || !height || !pitches || !lines)
+        return 0;
+
+    auto* self = static_cast<VLCPlayer*>(*userdata);
+    std::memcpy(chroma, "RV32", 4);
+
+    self->m_frameWidth = *width;
+    self->m_frameHeight = *height;
+    self->m_framePitch = (*width) * 4;
+    *pitches = self->m_framePitch;
+    *lines = *height;
+
+    QMutexLocker locker(&self->m_frameMutex);
+    self->m_frameBuffer.resize(static_cast<qsizetype>(self->m_framePitch) * self->m_frameHeight);
+    return 1;
+}
+
+void* VLCPlayer::frameLock(void* userdata, void** planes)
+{
+    if (!userdata || !planes) return nullptr;
+    auto* self = static_cast<VLCPlayer*>(userdata);
+    self->m_frameMutex.lock();
+    if (self->m_frameBuffer.isEmpty()) {
+        self->m_frameMutex.unlock();
+        *planes = nullptr;
+        return nullptr;
+    }
+    *planes = self->m_frameBuffer.data();
+    return self->m_frameBuffer.data();
+}
+
+void VLCPlayer::frameUnlock(void* userdata, void* /*picture*/, void* const* /*planes*/)
+{
+    if (!userdata) return;
+    auto* self = static_cast<VLCPlayer*>(userdata);
+    // Keep the buffer locked until display() has copied the frame.
+    Q_UNUSED(self);
+}
+
+void VLCPlayer::frameDisplay(void* userdata, void* /*picture*/)
+{
+    if (!userdata) return;
+    auto* self = static_cast<VLCPlayer*>(userdata);
+    const unsigned width = self->m_frameWidth;
+    const unsigned height = self->m_frameHeight;
+    const unsigned pitch = self->m_framePitch;
+
+    if (width == 0 || height == 0 || pitch == 0 || self->m_frameBuffer.isEmpty()) {
+        self->m_frameMutex.unlock();
+        return;
+    }
+
+    QImage frame(reinterpret_cast<const uchar*>(self->m_frameBuffer.constData()),
+                 static_cast<int>(width), static_cast<int>(height),
+                 static_cast<int>(pitch), QImage::Format_ARGB32);
+    // The queued signal needs ownership after the callback returns, so detach once here.
+    QImage copy = frame.copy();
+    self->m_frameMutex.unlock();
+
+    QMetaObject::invokeMethod(self, [self, copy = std::move(copy)]() mutable {
+        emit self->frameReady(copy);
+    }, Qt::QueuedConnection);
 }
 
 void VLCPlayer::setCropRect(const QRectF& normalizedRect)
