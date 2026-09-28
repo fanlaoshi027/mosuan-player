@@ -44,18 +44,19 @@ jobs:
           powershell -NoProfile -Command "$lines = Get-Content '%RUNNER_TEMP%\libvlc-exports.txt'; $out = @('EXPORTS'); foreach ($l in $lines) { if ($l -match '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(libvlc_[A-Za-z0-9_]+)\s*$') { $out += $matches[1] } }; Set-Content '%RUNNER_TEMP%\libvlc.def' $out"
           lib /def:"%RUNNER_TEMP%\libvlc.def" /machine:x64 /out:"%RUNNER_TEMP%\libvlc.lib"
 
+      - name: Prepare LibVLC SDK layout
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\libvlc-sdk\include" | Out-Null
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\libvlc-sdk\lib" | Out-Null
+          Copy-Item "$env:VLC_INCLUDE\include\vlc" "$env:RUNNER_TEMP\libvlc-sdk\include" -Recurse
+          Copy-Item "$env:RUNNER_TEMP\libvlc.lib" "$env:RUNNER_TEMP\libvlc-sdk\lib\libvlc.lib"
+
       - name: Configure
         shell: pwsh
         run: |
           $qtBin = "$env:GITHUB_WORKSPACE\qt\6.8.3\msvc2022_64\bin"
           $env:PATH = "$qtBin;$env:PATH"
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\qt\6.8.3\msvc2022_64" `
-            -DLIBVLC_ROOT="$env:RUNNER_TEMP\libvlc-sdk"
-          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\libvlc-sdk\include" | Out-Null
-          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\libvlc-sdk\lib" | Out-Null
-          Copy-Item "$env:VLC_INCLUDE\include\vlc" "$env:RUNNER_TEMP\libvlc-sdk\include" -Recurse
-          Copy-Item "$env:RUNNER_TEMP\libvlc.lib" "$env:RUNNER_TEMP\libvlc-sdk\lib\libvlc.lib"
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\qt\6.8.3\msvc2022_64" `
             -DLIBVLC_ROOT="$env:RUNNER_TEMP\libvlc-sdk"
