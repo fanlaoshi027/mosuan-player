@@ -27,7 +27,6 @@ public:
     void setCropRect(const QRectF& normalizedRect);
     void resetCrop();
 
-    // Opt-in frame path. Native VLC output remains the default for performance.
     void setFrameProcessingEnabled(bool enabled);
     bool frameProcessingEnabled() const { return m_frameProcessingEnabled; }
 
@@ -58,6 +57,7 @@ private:
     VLCInstance* m_instance = nullptr;
     libvlc_media_player_t* m_player = nullptr;
     libvlc_event_manager_t* m_eventManager = nullptr;
+    WId m_videoOutputWindow = 0;
     QRectF m_cropRect{0.0, 0.0, 1.0, 1.0};
     bool m_cropEnabled = false;
 
