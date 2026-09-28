@@ -34,8 +34,7 @@ VLCPlayer::~VLCPlayer()
 
 void VLCPlayer::vlcEventCallback(const libvlc_event_t* event, void* userdata)
 {
-    if (!event || !userdata) return;
-    if (event->type != libvlc_MediaPlayerEndReached) return;
+    if (!event || !userdata || event->type != libvlc_MediaPlayerEndReached) return;
     auto* self = static_cast<VLCPlayer*>(userdata);
     QMetaObject::invokeMethod(self, [self] {
         emit self->playbackEnded();
@@ -46,7 +45,6 @@ void VLCPlayer::vlcEventCallback(const libvlc_event_t* event, void* userdata)
 bool VLCPlayer::open(const QString& path)
 {
     if (!m_player || path.isEmpty()) return false;
-
     libvlc_media_t* media = libvlc_media_new_path(
         m_instance->instance(), path.toUtf8().constData());
     if (!media) return false;
@@ -62,7 +60,7 @@ void VLCPlayer::play()
 {
     if (m_player) {
         libvlc_media_player_play(m_player);
-        if (m_cropEnabled) applyCropGeometry();
+        if (m_cropEnabled && !m_frameProcessingEnabled) applyCropGeometry();
         emit stateChanged();
     }
 }
@@ -121,6 +119,7 @@ void VLCPlayer::setFrameProcessingEnabled(bool enabled)
     m_frameProcessingEnabled = enabled;
     configureFrameCallbacks(enabled);
 
+    if (!enabled && m_videoOutputWindow) setVideoOutput(m_videoOutputWindow);
     if (wasPlaying && m_player) libvlc_media_player_play(m_player);
     emit stateChanged();
 }
@@ -129,8 +128,6 @@ void VLCPlayer::configureFrameCallbacks(bool enabled)
 {
     if (!m_player) return;
     if (enabled) {
-        // RV32 gives us one 32-bit pixel per source pixel and avoids YUV conversion
-        // in our own processing path. This path is opt-in; native VLC output stays default.
         libvlc_video_set_callbacks(m_player,
                                    &VLCPlayer::frameLock,
                                    &VLCPlayer::frameUnlock,
@@ -142,6 +139,8 @@ void VLCPlayer::configureFrameCallbacks(bool enabled)
         libvlc_video_set_format_callbacks(m_player, nullptr, nullptr);
         QMutexLocker locker(&m_frameMutex);
         m_frameBuffer.clear();
+        m_pendingFrame = QImage();
+        m_frameDispatchPending = false;
         m_frameWidth = m_frameHeight = m_framePitch = 0;
     }
 }
@@ -150,18 +149,14 @@ unsigned VLCPlayer::frameFormat(void** userdata, char* chroma,
                                 unsigned* width, unsigned* height,
                                 unsigned* pitches, unsigned* lines)
 {
-    if (!userdata || !*userdata || !chroma || !width || !height || !pitches || !lines)
-        return 0;
-
+    if (!userdata || !*userdata || !chroma || !width || !height || !pitches || !lines) return 0;
     auto* self = static_cast<VLCPlayer*>(*userdata);
     std::memcpy(chroma, "RV32", 4);
-
     self->m_frameWidth = *width;
     self->m_frameHeight = *height;
     self->m_framePitch = (*width) * 4;
     *pitches = self->m_framePitch;
     *lines = *height;
-
     QMutexLocker locker(&self->m_frameMutex);
     self->m_frameBuffer.resize(static_cast<qsizetype>(self->m_framePitch) * self->m_frameHeight);
     return 1;
@@ -183,10 +178,8 @@ void* VLCPlayer::frameLock(void* userdata, void** planes)
 
 void VLCPlayer::frameUnlock(void* userdata, void* /*picture*/, void* const* /*planes*/)
 {
-    if (!userdata) return;
-    auto* self = static_cast<VLCPlayer*>(userdata);
-    // Keep the buffer locked until display() has copied the frame.
-    Q_UNUSED(self);
+    Q_UNUSED(userdata);
+    // The buffer remains locked until frameDisplay() finishes copying the frame.
 }
 
 void VLCPlayer::frameDisplay(void* userdata, void* /*picture*/)
@@ -205,13 +198,32 @@ void VLCPlayer::frameDisplay(void* userdata, void* /*picture*/)
     QImage frame(reinterpret_cast<const uchar*>(self->m_frameBuffer.constData()),
                  static_cast<int>(width), static_cast<int>(height),
                  static_cast<int>(pitch), QImage::Format_ARGB32);
-    // The queued signal needs ownership after the callback returns, so detach once here.
     QImage copy = frame.copy();
-    self->m_frameMutex.unlock();
 
-    QMetaObject::invokeMethod(self, [self, copy = std::move(copy)]() mutable {
-        emit self->frameReady(copy);
-    }, Qt::QueuedConnection);
+    bool schedule = false;
+    {
+        // Keep only the newest frame. This prevents the GUI event queue from
+        // accumulating 60 callbacks/second when processing/display is slower.
+        QMutexLocker locker(&self->m_frameMutex);
+        self->m_pendingFrame = std::move(copy);
+        if (!self->m_frameDispatchPending) {
+            self->m_frameDispatchPending = true;
+            schedule = true;
+        }
+        self->m_frameMutex.unlock();
+    }
+
+    if (schedule) {
+        QMetaObject::invokeMethod(self, [self] {
+            QImage frameToDisplay;
+            {
+                QMutexLocker locker(&self->m_frameMutex);
+                frameToDisplay = std::move(self->m_pendingFrame);
+                self->m_frameDispatchPending = false;
+            }
+            if (!frameToDisplay.isNull()) emit self->frameReady(frameToDisplay);
+        }, Qt::QueuedConnection);
+    }
 }
 
 void VLCPlayer::setCropRect(const QRectF& normalizedRect)
@@ -221,12 +233,12 @@ void VLCPlayer::setCropRect(const QRectF& normalizedRect)
     if (r.width() <= 0.0 || r.height() <= 0.0) return;
     m_cropRect = r;
     m_cropEnabled = r != QRectF(0.0, 0.0, 1.0, 1.0);
-    applyCropGeometry();
+    if (!m_frameProcessingEnabled) applyCropGeometry();
 }
 
 bool VLCPlayer::applyCropGeometry()
 {
-    if (!m_player || !m_cropEnabled) return false;
+    if (!m_player || !m_cropEnabled || m_frameProcessingEnabled) return false;
     const int width = videoWidth();
     const int height = videoHeight();
     if (width <= 0 || height <= 0) return false;
@@ -244,7 +256,7 @@ void VLCPlayer::resetCrop()
 {
     m_cropRect = QRectF(0.0, 0.0, 1.0, 1.0);
     m_cropEnabled = false;
-    if (m_player) libvlc_video_set_crop_geometry(m_player, nullptr);
+    if (m_player && !m_frameProcessingEnabled) libvlc_video_set_crop_geometry(m_player, nullptr);
 }
 
 qint64 VLCPlayer::time() const { return m_player ? libvlc_media_player_get_time(m_player) : 0; }
