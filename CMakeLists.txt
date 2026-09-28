@@ -44,6 +44,8 @@ add_executable(MosuanPlayer
     src/features/display/SmartInvertEngine.cpp
     src/features/display/VideoFramePipeline.h
     src/features/display/VideoFramePipeline.cpp
+    src/features/display/LibVLCFrameBridge.h
+    src/features/display/LibVLCFrameBridge.cpp
     src/ui/VideoWidget.h
     src/ui/VideoWidget.cpp
     src/ui/PlayerToolbar.h
@@ -53,7 +55,6 @@ add_executable(MosuanPlayer
 )
 
 target_include_directories(MosuanPlayer PRIVATE src ${LIBVLC_INCLUDE_DIR})
-
 target_link_libraries(MosuanPlayer PRIVATE Qt6::Widgets ${LIBVLC_LIBRARY})
 
 if(WIN32)
