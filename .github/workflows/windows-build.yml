@@ -48,6 +48,11 @@ jobs:
       - name: Create MSVC import library for libvlc
         shell: cmd
         run: |
+          for /f "usebackq tokens=*" %%i in (`vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+          where dumpbin
+          where lib
           dumpbin /exports "%VLC_ROOT%\libvlc.dll" > "%RUNNER_TEMP%\libvlc-exports.txt"
           powershell -NoProfile -Command "$lines = Get-Content '%RUNNER_TEMP%\libvlc-exports.txt'; $out = @('EXPORTS'); foreach ($l in $lines) { if ($l -match '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(libvlc_[A-Za-z0-9_]+)\s*$') { $out += $matches[1] } }; Set-Content '%RUNNER_TEMP%\libvlc.def' $out"
           lib /def:"%RUNNER_TEMP%\libvlc.def" /machine:x64 /out:"%RUNNER_TEMP%\libvlc.lib"
