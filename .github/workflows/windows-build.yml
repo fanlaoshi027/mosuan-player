@@ -70,7 +70,12 @@ jobs:
         run: |
           $qtBin = "$env:GITHUB_WORKSPACE\qt\6.8.3\msvc2022_64\bin"
           $env:PATH = "$qtBin;$env:PATH"
+          $vsInstall = "C:\Program Files\Microsoft Visual Studio\18\Enterprise"
+          if (-not (Test-Path "$vsInstall\Common7\IDE\devenv.exe")) {
+            throw "Visual Studio 2026 installation was not found at $vsInstall"
+          }
           cmake -S . -B build -G "Visual Studio 18 2026" -A x64 `
+            -DCMAKE_GENERATOR_INSTANCE="$vsInstall" `
             -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\qt\6.8.3\msvc2022_64" `
             -DLIBVLC_ROOT="$env:RUNNER_TEMP\libvlc-sdk"
 
