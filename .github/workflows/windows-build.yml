@@ -70,7 +70,7 @@ jobs:
         run: |
           $qtBin = "$env:GITHUB_WORKSPACE\qt\6.8.3\msvc2022_64\bin"
           $env:PATH = "$qtBin;$env:PATH"
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+          cmake -S . -B build -G "Visual Studio 18 2026" -A x64 `
             -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\qt\6.8.3\msvc2022_64" `
             -DLIBVLC_ROOT="$env:RUNNER_TEMP\libvlc-sdk"
 
