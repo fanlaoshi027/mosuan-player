@@ -54,6 +54,7 @@ signals:
     void playbackEnded();
     void frameReady(const QImage& frame);
     void mediaStateChanged(VLCMediaState state);
+    void mediaError(const QString& message);
 
 private:
     static void vlcEventCallback(const libvlc_event_t* event, void* userdata);
