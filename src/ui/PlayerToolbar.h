@@ -12,11 +12,11 @@ class PlayerToolbar final : public QWidget
     Q_OBJECT
 public:
     explicit PlayerToolbar(QWidget* parent = nullptr);
-
     void setDuration(qint64 milliseconds);
     void setPosition(qint64 milliseconds);
     void setPlaying(bool playing);
     void setCropActive(bool active);
+    void setProtectedActive(bool active);
 
 signals:
     void openRequested();
@@ -27,13 +27,14 @@ signals:
     void fullscreenRequested();
     void cropRequested();
     void smartInvertRequested();
+    void protectedRequested();
 
 private:
     void updateTimeLabel();
     static QString formatTime(qint64 milliseconds);
-
     QPushButton* m_playPause = nullptr;
     QPushButton* m_crop = nullptr;
+    QPushButton* m_protected = nullptr;
     QSlider* m_progress = nullptr;
     QSlider* m_volume = nullptr;
     QLabel* m_time = nullptr;
