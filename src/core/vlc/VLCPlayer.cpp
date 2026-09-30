@@ -2,11 +2,31 @@
 #include "VLCInstance.h"
 
 #include <QByteArray>
+#include <QFileInfo>
 #include <QMetaObject>
 #include <QMutexLocker>
+#include <QUrl>
 #include <QString>
 #include <QtMath>
 #include <cstring>
+
+namespace {
+
+libvlc_media_t* createLocalMedia(VLCInstance* instance, const QString& path)
+{
+    if (!instance || !instance->instance() || path.isEmpty()) return nullptr;
+
+    const QFileInfo info(path);
+    if (!info.exists() || !info.isFile()) return nullptr;
+
+    const QUrl url = QUrl::fromLocalFile(info.absoluteFilePath());
+    const QByteArray encoded = url.toEncoded();
+    if (encoded.isEmpty()) return nullptr;
+
+    return libvlc_media_new_location(instance->instance(), encoded.constData());
+}
+
+}
 
 VLCPlayer::VLCPlayer(VLCInstance* instance, QObject* parent)
     : QObject(parent), m_instance(instance)
@@ -16,6 +36,16 @@ VLCPlayer::VLCPlayer(VLCInstance* instance, QObject* parent)
         if (m_player) {
             m_eventManager = libvlc_media_player_event_manager(m_player);
             if (m_eventManager) {
+                libvlc_event_attach(m_eventManager, libvlc_MediaPlayerOpening,
+                                    &VLCPlayer::vlcEventCallback, this);
+                libvlc_event_attach(m_eventManager, libvlc_MediaPlayerBuffering,
+                                    &VLCPlayer::vlcEventCallback, this);
+                libvlc_event_attach(m_eventManager, libvlc_MediaPlayerPlaying,
+                                    &VLCPlayer::vlcEventCallback, this);
+                libvlc_event_attach(m_eventManager, libvlc_MediaPlayerPaused,
+                                    &VLCPlayer::vlcEventCallback, this);
+                libvlc_event_attach(m_eventManager, libvlc_MediaPlayerEncounteredError,
+                                    &VLCPlayer::vlcEventCallback, this);
                 libvlc_event_attach(m_eventManager, libvlc_MediaPlayerEndReached,
                                     &VLCPlayer::vlcEventCallback, this);
             }
@@ -26,6 +56,16 @@ VLCPlayer::VLCPlayer(VLCInstance* instance, QObject* parent)
 VLCPlayer::~VLCPlayer()
 {
     if (m_eventManager) {
+        libvlc_event_detach(m_eventManager, libvlc_MediaPlayerOpening,
+                            &VLCPlayer::vlcEventCallback, this);
+        libvlc_event_detach(m_eventManager, libvlc_MediaPlayerBuffering,
+                            &VLCPlayer::vlcEventCallback, this);
+        libvlc_event_detach(m_eventManager, libvlc_MediaPlayerPlaying,
+                            &VLCPlayer::vlcEventCallback, this);
+        libvlc_event_detach(m_eventManager, libvlc_MediaPlayerPaused,
+                            &VLCPlayer::vlcEventCallback, this);
+        libvlc_event_detach(m_eventManager, libvlc_MediaPlayerEncounteredError,
+                            &VLCPlayer::vlcEventCallback, this);
         libvlc_event_detach(m_eventManager, libvlc_MediaPlayerEndReached,
                             &VLCPlayer::vlcEventCallback, this);
     }
@@ -34,20 +74,40 @@ VLCPlayer::~VLCPlayer()
 
 void VLCPlayer::vlcEventCallback(const libvlc_event_t* event, void* userdata)
 {
-    if (!event || !userdata || event->type != libvlc_MediaPlayerEndReached) return;
+    if (!event || !userdata) return;
     auto* self = static_cast<VLCPlayer*>(userdata);
-    QMetaObject::invokeMethod(self, [self] {
-        emit self->playbackEnded();
-        emit self->stateChanged();
+
+    QMetaObject::invokeMethod(self, [self, type = event->type] {
+        switch (type) {
+        case libvlc_MediaPlayerOpening:
+        case libvlc_MediaPlayerBuffering:
+        case libvlc_MediaPlayerPlaying:
+        case libvlc_MediaPlayerPaused:
+            emit self->stateChanged();
+            break;
+        case libvlc_MediaPlayerEncounteredError:
+            qWarning() << "VLC media player encountered an error";
+            emit self->stateChanged();
+            break;
+        case libvlc_MediaPlayerEndReached:
+            emit self->playbackEnded();
+            emit self->stateChanged();
+            break;
+        default:
+            break;
+        }
     }, Qt::QueuedConnection);
 }
 
 bool VLCPlayer::open(const QString& path)
 {
     if (!m_player || path.isEmpty()) return false;
-    libvlc_media_t* media = libvlc_media_new_path(
-        m_instance->instance(), path.toUtf8().constData());
-    if (!media) return false;
+
+    libvlc_media_t* media = createLocalMedia(m_instance, path);
+    if (!media) {
+        qWarning() << "Unable to create VLC media for:" << path;
+        return false;
+    }
 
     libvlc_media_player_set_media(m_player, media);
     libvlc_media_release(media);
