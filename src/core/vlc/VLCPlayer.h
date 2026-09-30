@@ -51,6 +51,7 @@ private:
     static unsigned frameFormat(void** userdata, char* chroma,
                                 unsigned* width, unsigned* height,
                                 unsigned* pitches, unsigned* lines);
+    static void frameCleanup(void* userdata);
     void configureFrameCallbacks(bool enabled);
     bool applyCropGeometry();
 
