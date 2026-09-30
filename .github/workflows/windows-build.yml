@@ -95,10 +95,13 @@ jobs:
           Copy-Item "$env:VLC_ROOT\libvlccore.dll" $stage
           Copy-Item "$env:VLC_ROOT\plugins" "$stage\plugins" -Recurse
           Compress-Archive -Path "$stage\*" -DestinationPath "$env:GITHUB_WORKSPACE\MosuanPlayer-Windows-x64.zip" -Force
+          if (-not (Test-Path "$env:GITHUB_WORKSPACE\MosuanPlayer-Windows-x64.zip")) { throw "ZIP package was not created" }
+          Get-Item "$env:GITHUB_WORKSPACE\MosuanPlayer-Windows-x64.zip"
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
           name: MosuanPlayer-Windows-x64
-          path: MosuanPlayer-Windows-x64.zip
+          path: ${{ github.workspace }}/MosuanPlayer-Windows-x64.zip
           if-no-files-found: error
+          retention-days: 14
