@@ -18,7 +18,12 @@ public:
     QRectF cropRect() const { return m_cropRect; }
     void resetCrop();
 
-    // Used only by the opt-in processed-frame path.
+    void setProtectedMode(bool enabled);
+    bool protectedMode() const { return m_protectedMode; }
+    QRectF protectedRect() const { return m_protectedRect; }
+    void setProtectedRect(const QRectF& rect);
+    void resetProtectedRect();
+
     void setProcessedFrame(const QImage& frame);
     void clearProcessedFrame();
     bool hasProcessedFrame() const { return !m_processedFrame.isNull(); }
@@ -26,6 +31,8 @@ public:
 signals:
     void cropChanged(const QRectF& normalizedRect);
     void cropCommitted(const QRectF& normalizedRect);
+    void protectedRectChanged(const QRectF& normalizedRect);
+    void protectedRectCommitted(const QRectF& normalizedRect);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -35,12 +42,16 @@ protected:
 
 private:
     enum class CropHandle { None, Move, TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left };
+    enum class ProtectedHandle { None, Move, TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left };
 
     QPointF toNormalized(const QPointF& point) const;
     QPointF toPixels(const QPointF& point) const;
     CropHandle hitTest(const QPointF& pixelPoint) const;
+    ProtectedHandle hitTestProtected(const QPointF& pixelPoint) const;
     void updateCursor(CropHandle handle);
+    void updateProtectedCursor(ProtectedHandle handle);
     void updateCropFromPointer(const QPointF& normalizedPoint);
+    void updateProtectedFromPointer(const QPointF& normalizedPoint);
 
     bool m_cropMode = false;
     bool m_draggingCrop = false;
@@ -49,5 +60,14 @@ private:
     QRectF m_dragStartRect;
     QPointF m_dragStartPoint;
     CropHandle m_activeHandle = CropHandle::None;
+
+    bool m_protectedMode = false;
+    bool m_draggingProtected = false;
+    QPointF m_protectedStart;
+    QRectF m_protectedRect;
+    QRectF m_protectedDragStartRect;
+    QPointF m_protectedDragStartPoint;
+    ProtectedHandle m_activeProtectedHandle = ProtectedHandle::None;
+
     QImage m_processedFrame;
 };
