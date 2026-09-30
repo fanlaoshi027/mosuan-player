@@ -134,7 +134,8 @@ void VLCPlayer::configureFrameCallbacks(bool enabled)
                                    &VLCPlayer::frameUnlock,
                                    &VLCPlayer::frameDisplay,
                                    this);
-        libvlc_video_set_format_callbacks(m_player, &VLCPlayer::frameFormat, this);
+        libvlc_video_set_format_callbacks(m_player, &VLCPlayer::frameFormat,
+                                           &VLCPlayer::frameCleanup);
     } else {
         libvlc_video_set_callbacks(m_player, nullptr, nullptr, nullptr, nullptr);
         libvlc_video_set_format_callbacks(m_player, nullptr, nullptr);
@@ -161,6 +162,11 @@ unsigned VLCPlayer::frameFormat(void** userdata, char* chroma,
     QMutexLocker locker(&self->m_frameMutex);
     self->m_frameBuffer.resize(static_cast<qsizetype>(self->m_framePitch) * self->m_frameHeight);
     return 1;
+}
+
+void VLCPlayer::frameCleanup(void* userdata)
+{
+    Q_UNUSED(userdata);
 }
 
 void* VLCPlayer::frameLock(void* userdata, void** planes)
@@ -241,7 +247,8 @@ bool VLCPlayer::applyCropGeometry()
     const int cropHeight = qBound(1, qRound(r.height() * height), height - y);
     const QByteArray geometry = QStringLiteral("%1x%2+%3+%4")
         .arg(cropWidth).arg(cropHeight).arg(x).arg(y).toUtf8();
-    return libvlc_video_set_crop_geometry(m_player, geometry.constData()) == 0;
+    libvlc_video_set_crop_geometry(m_player, geometry.constData());
+    return true;
 }
 
 void VLCPlayer::resetCrop()
