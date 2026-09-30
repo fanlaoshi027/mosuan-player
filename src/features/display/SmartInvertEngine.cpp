@@ -1,6 +1,11 @@
 #include "SmartInvertEngine.h"
 
+#include <QColor>
 #include <QtGlobal>
+
+namespace {
+constexpr int kNeutralSaturation = 38;
+}
 
 QImage SmartInvertEngine::process(const QImage& source,
                                   bool enabled,
@@ -10,8 +15,8 @@ QImage SmartInvertEngine::process(const QImage& source,
     if (source.isNull()) return source;
     if (!enabled && protectedRect.isEmpty()) return source;
 
-    // VLC already supplies RV32/ARGB32 frames. Keep the same format so the
-    // processing path performs one copy instead of convertToFormat() + copy.
+    // VLC supplies RV32/ARGB32 frames. Keep that format so the processing path
+    // performs one copy instead of convertToFormat() followed by another copy.
     QImage image = source.format() == QImage::Format_ARGB32
         ? source.copy()
         : source.convertToFormat(QImage::Format_ARGB32);
@@ -26,31 +31,39 @@ QImage SmartInvertEngine::process(const QImage& source,
     const int right = hasProtected ? qBound(0, qRound(normalized.right() * image.width()), image.width()) : 0;
     const int bottom = hasProtected ? qBound(0, qRound(normalized.bottom() * image.height()), image.height()) : 0;
 
-    // Fast path: no protected region. This is the common full-frame mode.
-    if (enabled && !hasProtected) {
-        for (int y = 0; y < image.height(); ++y) {
-            auto* row = reinterpret_cast<QRgb*>(image.scanLine(y));
-            for (int x = 0; x < image.width(); ++x)
-                row[x] ^= 0x00FFFFFFu;
-        }
-        return image;
-    }
-
+    // Smart mode: invert neutral/greyscale pixels only. This is much more
+    // suitable for lesson videos than a blind RGB inversion: white paper and
+    // black handwriting become dark paper and light handwriting, while faces,
+    // coloured pens and other colourful video content retain their colours.
     for (int y = 0; y < image.height(); ++y) {
         auto* row = reinterpret_cast<QRgb*>(image.scanLine(y));
         const bool rowProtected = hasProtected && y >= top && y < bottom;
 
         for (int x = 0; x < image.width(); ++x) {
             const bool protectedPixel = rowProtected && x >= left && x < right;
-            QRgb p = row[x];
+            const QRgb p = row[x];
 
-            if (enabled && !protectedPixel) {
-                row[x] = p ^ 0x00FFFFFFu;
-            } else if (protectedPixel && brightness < 100) {
-                const int r = qRed(p) * brightness / 100;
-                const int g = qGreen(p) * brightness / 100;
-                const int b = qBlue(p) * brightness / 100;
-                row[x] = qRgba(r, g, b, qAlpha(p));
+            if (protectedPixel) {
+                if (brightness < 100) {
+                    const int r = qRed(p) * brightness / 100;
+                    const int g = qGreen(p) * brightness / 100;
+                    const int b = qBlue(p) * brightness / 100;
+                    row[x] = qRgba(r, g, b, qAlpha(p));
+                }
+                continue;
+            }
+
+            if (!enabled) continue;
+
+            const int maxChannel = qMax(qRed(p), qMax(qGreen(p), qBlue(p)));
+            const int minChannel = qMin(qRed(p), qMin(qGreen(p), qBlue(p)));
+            const int saturation = maxChannel - minChannel;
+
+            if (saturation <= kNeutralSaturation) {
+                row[x] = qRgba(255 - qRed(p),
+                               255 - qGreen(p),
+                               255 - qBlue(p),
+                               qAlpha(p));
             }
         }
     }
