@@ -9,6 +9,16 @@
 
 class VLCInstance;
 
+enum class VLCMediaState {
+    Idle,
+    Opening,
+    Buffering,
+    Playing,
+    Paused,
+    Error,
+    Ended
+};
+
 class VLCPlayer final : public QObject
 {
     Q_OBJECT
@@ -29,6 +39,7 @@ public:
 
     void setFrameProcessingEnabled(bool enabled);
     bool frameProcessingEnabled() const { return m_frameProcessingEnabled; }
+    VLCMediaState mediaState() const { return m_mediaState; }
 
     qint64 time() const;
     qint64 duration() const;
@@ -42,6 +53,7 @@ signals:
     void stateChanged();
     void playbackEnded();
     void frameReady(const QImage& frame);
+    void mediaStateChanged(VLCMediaState state);
 
 private:
     static void vlcEventCallback(const libvlc_event_t* event, void* userdata);
@@ -53,6 +65,7 @@ private:
                                 unsigned* pitches, unsigned* lines);
     static void frameCleanup(void* userdata);
     void configureFrameCallbacks(bool enabled);
+    void setMediaState(VLCMediaState state);
     bool applyCropGeometry();
 
     VLCInstance* m_instance = nullptr;
@@ -61,6 +74,8 @@ private:
     WId m_videoOutputWindow = 0;
     QRectF m_cropRect{0.0, 0.0, 1.0, 1.0};
     bool m_cropEnabled = false;
+
+    VLCMediaState m_mediaState = VLCMediaState::Idle;
 
     bool m_frameProcessingEnabled = false;
     QMutex m_frameMutex;
