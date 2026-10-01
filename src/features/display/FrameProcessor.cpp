@@ -18,7 +18,9 @@ QImage FrameProcessor::process(const QImage& frame, bool smartInvert)
     if (frame.isNull())
         return frame;
 
-    QImage result = frame.convertToFormat(QImage::Format_ARGB32);
+    QImage result = frame.format() == QImage::Format_ARGB32
+        ? frame.copy()
+        : frame.convertToFormat(QImage::Format_ARGB32);
 
     for (int y = 0; y < result.height(); ++y) {
         QRgb* line = reinterpret_cast<QRgb*>(result.scanLine(y));
@@ -28,7 +30,7 @@ QImage FrameProcessor::process(const QImage& frame, bool smartInvert)
             float brightness = 1.0f;
 
             if (m_regionManager) {
-                auto info = m_regionManager->regionAt(x, y, result.size());
+                const auto info = m_regionManager->regionAt(x, y, result.size());
                 protectedArea = info.enabled;
                 brightness = info.brightness;
             }
@@ -49,18 +51,13 @@ QRgb FrameProcessor::processPixel(QRgb pixel, bool invert)
     if (!invert)
         return pixel;
 
-    int r = qRed(pixel);
-    int g = qGreen(pixel);
-    int b = qBlue(pixel);
-
-    int maxValue = qMax(r, qMax(g, b));
-    int minValue = qMin(r, qMin(g, b));
-
-    // 彩色内容尽量保持
-    if (maxValue - minValue > 40)
-        return pixel;
-
-    return qRgba(255 - r, 255 - g, 255 - b, qAlpha(pixel));
+    // Invert the complete RGB triplet, including anti-aliased edge pixels.
+    // A saturation threshold here caused coloured/grey edge pixels to remain
+    // unchanged, producing visible jagged halos around handwriting.
+    return qRgba(255 - qRed(pixel),
+                 255 - qGreen(pixel),
+                 255 - qBlue(pixel),
+                 qAlpha(pixel));
 }
 
 QRgb FrameProcessor::applyBrightness(QRgb pixel, float brightness)
