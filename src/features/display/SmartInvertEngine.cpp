@@ -3,10 +3,6 @@
 #include <QColor>
 #include <QtGlobal>
 
-namespace {
-constexpr int kNeutralSaturation = 38;
-}
-
 QImage SmartInvertEngine::process(const QImage& source,
                                   bool enabled,
                                   const QRectF& protectedRect,
@@ -15,8 +11,9 @@ QImage SmartInvertEngine::process(const QImage& source,
     if (source.isNull()) return source;
     if (!enabled && protectedRect.isEmpty()) return source;
 
-    // VLC supplies RV32/ARGB32 frames. Keep that format so the processing path
-    // performs one copy instead of convertToFormat() followed by another copy.
+    // Keep the original frame geometry and perform one raster pass. The old
+    // saturation threshold inverted only grey pixels, which created visible
+    // jagged halos around anti-aliased handwriting and coloured edges.
     QImage image = source.format() == QImage::Format_ARGB32
         ? source.copy()
         : source.convertToFormat(QImage::Format_ARGB32);
@@ -31,10 +28,9 @@ QImage SmartInvertEngine::process(const QImage& source,
     const int right = hasProtected ? qBound(0, qRound(normalized.right() * image.width()), image.width()) : 0;
     const int bottom = hasProtected ? qBound(0, qRound(normalized.bottom() * image.height()), image.height()) : 0;
 
-    // Smart mode: invert neutral/greyscale pixels only. This is much more
-    // suitable for lesson videos than a blind RGB inversion: white paper and
-    // black handwriting become dark paper and light handwriting, while faces,
-    // coloured pens and other colourful video content retain their colours.
+    // Website-style inversion: every pixel outside the protected rectangle is
+    // inverted uniformly. This avoids the old saturation cutoff, so edge
+    // anti-aliasing remains continuous instead of producing jagged outlines.
     for (int y = 0; y < image.height(); ++y) {
         auto* row = reinterpret_cast<QRgb*>(image.scanLine(y));
         const bool rowProtected = hasProtected && y >= top && y < bottom;
@@ -53,13 +49,7 @@ QImage SmartInvertEngine::process(const QImage& source,
                 continue;
             }
 
-            if (!enabled) continue;
-
-            const int maxChannel = qMax(qRed(p), qMax(qGreen(p), qBlue(p)));
-            const int minChannel = qMin(qRed(p), qMin(qGreen(p), qBlue(p)));
-            const int saturation = maxChannel - minChannel;
-
-            if (saturation <= kNeutralSaturation) {
+            if (enabled) {
                 row[x] = qRgba(255 - qRed(p),
                                255 - qGreen(p),
                                255 - qBlue(p),
