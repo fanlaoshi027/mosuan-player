@@ -72,6 +72,14 @@ VLCPlayer::~VLCPlayer()
     if (m_player) libvlc_media_player_release(m_player);
 }
 
+void VLCPlayer::setMediaState(VLCMediaState state)
+{
+    if (m_mediaState == state) return;
+    m_mediaState = state;
+    emit mediaStateChanged(m_mediaState);
+    emit stateChanged();
+}
+
 void VLCPlayer::vlcEventCallback(const libvlc_event_t* event, void* userdata)
 {
     if (!event || !userdata) return;
@@ -80,18 +88,25 @@ void VLCPlayer::vlcEventCallback(const libvlc_event_t* event, void* userdata)
     QMetaObject::invokeMethod(self, [self, type = event->type] {
         switch (type) {
         case libvlc_MediaPlayerOpening:
+            self->setMediaState(VLCMediaState::Opening);
+            break;
         case libvlc_MediaPlayerBuffering:
+            self->setMediaState(VLCMediaState::Buffering);
+            break;
         case libvlc_MediaPlayerPlaying:
+            self->setMediaState(VLCMediaState::Playing);
+            break;
         case libvlc_MediaPlayerPaused:
-            emit self->stateChanged();
+            self->setMediaState(VLCMediaState::Paused);
             break;
         case libvlc_MediaPlayerEncounteredError:
+            self->setMediaState(VLCMediaState::Error);
             qWarning() << "VLC media player encountered an error";
-            emit self->stateChanged();
+            emit self->mediaError(QStringLiteral("VLC 无法解码或播放该视频"));
             break;
         case libvlc_MediaPlayerEndReached:
+            self->setMediaState(VLCMediaState::Ended);
             emit self->playbackEnded();
-            emit self->stateChanged();
             break;
         default:
             break;
@@ -105,6 +120,8 @@ bool VLCPlayer::open(const QString& path)
 
     libvlc_media_t* media = createLocalMedia(m_instance, path);
     if (!media) {
+        setMediaState(VLCMediaState::Error);
+        emit mediaError(QStringLiteral("无法打开视频文件：文件不存在或路径无效"));
         qWarning() << "Unable to create VLC media for:" << path;
         return false;
     }
@@ -112,7 +129,7 @@ bool VLCPlayer::open(const QString& path)
     libvlc_media_player_set_media(m_player, media);
     libvlc_media_release(media);
     resetCrop();
-    emit stateChanged();
+    setMediaState(VLCMediaState::Idle);
     return true;
 }
 
@@ -121,16 +138,12 @@ void VLCPlayer::play()
     if (m_player) {
         libvlc_media_player_play(m_player);
         if (m_cropEnabled && !m_frameProcessingEnabled) applyCropGeometry();
-        emit stateChanged();
     }
 }
 
 void VLCPlayer::pause()
 {
-    if (m_player) {
-        libvlc_media_player_set_pause(m_player, 1);
-        emit stateChanged();
-    }
+    if (m_player) libvlc_media_player_set_pause(m_player, 1);
 }
 
 void VLCPlayer::stop()
@@ -138,7 +151,7 @@ void VLCPlayer::stop()
     if (m_player) {
         libvlc_media_player_stop(m_player);
         resetCrop();
-        emit stateChanged();
+        setMediaState(VLCMediaState::Idle);
     }
 }
 
@@ -173,15 +186,39 @@ void VLCPlayer::setVideoOutput(WId windowId)
 
 void VLCPlayer::setFrameProcessingEnabled(bool enabled)
 {
-    if (m_frameProcessingEnabled == enabled) return;
-    const bool wasPlaying = isPlaying();
-    if (wasPlaying && m_player) libvlc_media_player_stop(m_player);
+    if (!m_player || m_frameProcessingEnabled == enabled) return;
+
+    // The old implementation stopped the media player and started it again.
+    // That made toggling inversion visibly jump backwards and caused a long
+    // decoder/rendering stall. Preserve the exact playback time and rate.
+    const qint64 savedTime = libvlc_media_player_get_time(m_player);
+    const float savedRate = libvlc_media_player_get_rate(m_player);
+    const bool wasPlaying = libvlc_media_player_is_playing(m_player) != 0;
+
+    if (wasPlaying) libvlc_media_player_set_pause(m_player, 1);
 
     m_frameProcessingEnabled = enabled;
     configureFrameCallbacks(enabled);
 
-    if (!enabled && m_videoOutputWindow) setVideoOutput(m_videoOutputWindow);
-    if (wasPlaying && m_player) libvlc_media_player_play(m_player);
+    if (enabled) {
+        // Frame callbacks must be configured before playback resumes.
+        if (m_videoOutputWindow == 0) {
+            // No native video target is required when callbacks are active.
+        }
+    } else if (m_videoOutputWindow) {
+        setVideoOutput(m_videoOutputWindow);
+    }
+
+    if (savedTime >= 0) {
+        libvlc_media_player_set_time(m_player, savedTime);
+    }
+    if (savedRate > 0.0f) {
+        libvlc_media_player_set_rate(m_player, savedRate);
+    }
+    if (wasPlaying) {
+        libvlc_media_player_play(m_player);
+    }
+
     emit stateChanged();
 }
 
@@ -233,6 +270,7 @@ void* VLCPlayer::frameLock(void* userdata, void** planes)
 {
     if (!userdata || !planes) return nullptr;
     auto* self = static_cast<VLCPlayer*>(userdata);
+    QMutexLocker locker(&self->m_frameMutex);
     if (self->m_frameBuffer.isEmpty()) {
         *planes = nullptr;
         return nullptr;
@@ -254,12 +292,17 @@ void VLCPlayer::frameDisplay(void* userdata, void* /*picture*/)
     const unsigned height = self->m_frameHeight;
     const unsigned pitch = self->m_framePitch;
 
-    if (width == 0 || height == 0 || pitch == 0 || self->m_frameBuffer.isEmpty()) return;
+    if (width == 0 || height == 0 || pitch == 0) return;
 
-    QImage frame(reinterpret_cast<const uchar*>(self->m_frameBuffer.constData()),
-                 static_cast<int>(width), static_cast<int>(height),
-                 static_cast<int>(pitch), QImage::Format_ARGB32);
-    QImage copy = frame.copy();
+    QImage copy;
+    {
+        QMutexLocker locker(&self->m_frameMutex);
+        if (self->m_frameBuffer.isEmpty()) return;
+        QImage frame(reinterpret_cast<const uchar*>(self->m_frameBuffer.constData()),
+                     static_cast<int>(width), static_cast<int>(height),
+                     static_cast<int>(pitch), QImage::Format_ARGB32);
+        copy = frame.copy();
+    }
 
     bool schedule = false;
     {
