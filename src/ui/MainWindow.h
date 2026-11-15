@@ -5,6 +5,8 @@
 #include <memory>
 
 class QListWidget;
+class QPushButton;
+class QEvent;
 class QListWidgetItem;
 class QTimer;
 class VLCInstance;
@@ -37,6 +39,8 @@ private slots:
 
 private:
     void setupShortcuts();
+    void applyStudentPolicy();
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void setupPlaylistUi(QWidget* central);
     void refreshPlaylistWidget();
     void loadVideoPath(const QString& path);
@@ -54,5 +58,11 @@ private:
     PlayerToolbar* m_toolbar = nullptr;
     QListWidget* m_playlistWidget = nullptr;
     bool m_smartInvert = false;
+    bool m_studentMode = false;
+    bool m_disableContextMenu = false;
+    bool m_disableUnsafeShortcuts = false;
+    bool m_denyArbitraryFiles = false;
+    bool m_allowPlaybackShortcuts = true;
+    QPushButton* m_addButton = nullptr;
     QString m_currentPath;
 };

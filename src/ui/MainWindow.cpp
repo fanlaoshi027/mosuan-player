@@ -7,6 +7,13 @@
 #include "PlayerToolbar.h"
 #include "VideoWidget.h"
 #include <QFileDialog>
+#include <QApplication>
+#include <QCoreApplication>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QKeyEvent>
+#include <QEvent>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QKeySequence>
@@ -25,6 +32,7 @@ MainWindow::MainWindow(QWidget* parent)
       m_profiles(std::make_unique<VideoProfileStore>()), m_framePipeline(std::make_unique<VideoFramePipeline>())
 {
     setWindowTitle(tr("Mosuan Player")); resize(1200,760);
+    applyStudentPolicy();
     auto* central=new QWidget(this); setupPlaylistUi(central); setCentralWidget(central); refreshPlaylistWidget();
     if(!m_vlc->initialize()){QMessageBox::critical(this,tr("Mosuan Player"),tr("LibVLC 初始化失败，请检查 LibVLC 安装。"));return;}
     m_player=std::make_unique<VLCPlayer>(m_vlc.get(),this); m_player->setVideoOutput(m_video->nativeVideoId());
@@ -77,6 +85,16 @@ MainWindow::MainWindow(QWidget* parent)
         if(m_currentPath.isEmpty())return;
         auto& p=m_profiles->profileFor(m_currentPath);p.protectedRect=rect;m_framePipeline->setProtectedRect(rect);m_profiles->save();
     });
+    if(m_studentMode) {
+        QApplication::instance()->installEventFilter(this);
+        if(m_disableContextMenu) {
+            setContextMenuPolicy(Qt::NoContextMenu);
+            centralWidget()->setContextMenuPolicy(Qt::NoContextMenu);
+            m_video->setContextMenuPolicy(Qt::NoContextMenu);
+            m_playlistWidget->setContextMenuPolicy(Qt::NoContextMenu);
+        }
+        if(m_denyArbitraryFiles && m_addButton) m_addButton->setEnabled(false);
+    }
     m_uiTimer->setInterval(250);connect(m_uiTimer.get(),&QTimer::timeout,this,&MainWindow::updatePlaybackUi);m_uiTimer->start();setupShortcuts();
 }
 MainWindow::~MainWindow(){if(m_profiles)m_profiles->save();if(m_playlist)m_playlist->save();}
@@ -85,15 +103,15 @@ void MainWindow::setupPlaylistUi(QWidget* central){
     auto* playerPanel=new QWidget(central);auto* playerLayout=new QVBoxLayout(playerPanel);playerLayout->setContentsMargins(0,0,0,0);playerLayout->setSpacing(0);
     m_video=new VideoWidget(playerPanel);m_toolbar=new PlayerToolbar(playerPanel);playerLayout->addWidget(m_video,1);playerLayout->addWidget(m_toolbar);
     auto* side=new QWidget(central);side->setObjectName("PlaylistPanel");side->setMinimumWidth(260);side->setMaximumWidth(340);auto* sideLayout=new QVBoxLayout(side);sideLayout->setContentsMargins(10,10,10,10);sideLayout->setSpacing(8);
-    auto* titleRow=new QHBoxLayout;auto* title=new QLabel(tr("播放列表"),side);auto* addButton=new QPushButton(tr("＋ 添加"),side);titleRow->addWidget(title);titleRow->addStretch();titleRow->addWidget(addButton);sideLayout->addLayout(titleRow);
+    auto* titleRow=new QHBoxLayout;auto* title=new QLabel(tr("播放列表"),side);auto* addButton=new QPushButton(tr("＋ 添加"),side);m_addButton=addButton;titleRow->addWidget(title);titleRow->addStretch();titleRow->addWidget(addButton);sideLayout->addLayout(titleRow);
     m_playlistWidget=new QListWidget(side);m_playlistWidget->setObjectName("PlaylistWidget");sideLayout->addWidget(m_playlistWidget,1);root->addWidget(playerPanel,1);root->addWidget(side);
     connect(addButton,&QPushButton::clicked,this,&MainWindow::openVideos);connect(m_playlistWidget,&QListWidget::itemDoubleClicked,this,&MainWindow::playPlaylistItem);
     central->setStyleSheet(R"(#PlaylistPanel{background:#171c24;border-left:1px solid #29313d;}#PlaylistPanel QLabel{color:#eef2f6;font-size:15px;font-weight:600;}#PlaylistPanel QPushButton{color:#eef2f6;background:#26303c;border:1px solid #364252;border-radius:7px;padding:6px 10px;}#PlaylistPanel QPushButton:hover{background:#314052;}#PlaylistWidget{background:#12171e;border:1px solid #29313d;border-radius:7px;color:#dce3ea;outline:0;padding:4px;}#PlaylistWidget::item{padding:9px 8px;border-radius:5px;}#PlaylistWidget::item:selected{background:#2f638f;color:white;}#PlaylistWidget::item:hover{background:#252e39;})");
 }
 void MainWindow::refreshPlaylistWidget(){if(!m_playlistWidget||!m_playlist)return;m_playlistWidget->clear();for(const QString& path:m_playlist->items())m_playlistWidget->addItem(QFileInfo(path).fileName());if(!m_currentPath.isEmpty()){const int i=m_playlist->indexOf(m_currentPath);if(i>=0)m_playlistWidget->setCurrentRow(i);}}
-void MainWindow::setupShortcuts(){auto* space=new QShortcut(QKeySequence(Qt::Key_Space),this);connect(space,&QShortcut::activated,this,&MainWindow::togglePlayPause);auto* fullscreen=new QShortcut(QKeySequence(Qt::Key_F),this);connect(fullscreen,&QShortcut::activated,this,&MainWindow::toggleFullscreen);auto* escape=new QShortcut(QKeySequence(Qt::Key_Escape),this);connect(escape,&QShortcut::activated,this,[this]{if(isFullScreen())showNormal();});auto* open=new QShortcut(QKeySequence(Qt::CTRL|Qt::Key_O),this);connect(open,&QShortcut::activated,this,&MainWindow::openVideo);}
-void MainWindow::openVideo(){const QString path=QFileDialog::getOpenFileName(this,tr("打开视频"),QString(),tr("视频文件 (*.mp4 *.mkv *.mov *.avi *.webm);;所有文件 (*)"));if(path.isEmpty())return;m_playlist->add(path);refreshPlaylistWidget();loadVideoPath(path);}
-void MainWindow::openVideos(){const QStringList paths=QFileDialog::getOpenFileNames(this,tr("添加视频"),QString(),tr("视频文件 (*.mp4 *.mkv *.mov *.avi *.webm);;所有文件 (*)"));if(paths.isEmpty())return;for(const QString& path:paths)m_playlist->add(path);refreshPlaylistWidget();if(m_currentPath.isEmpty())loadVideoPath(paths.first());}
+void MainWindow::setupShortcuts(){if(m_studentMode && !m_allowPlaybackShortcuts) return;auto* space=new QShortcut(QKeySequence(Qt::Key_Space),this);connect(space,&QShortcut::activated,this,&MainWindow::togglePlayPause);auto* fullscreen=new QShortcut(QKeySequence(Qt::Key_F),this);connect(fullscreen,&QShortcut::activated,this,&MainWindow::toggleFullscreen);auto* escape=new QShortcut(QKeySequence(Qt::Key_Escape),this);connect(escape,&QShortcut::activated,this,[this]{if(isFullScreen())showNormal();});if(!(m_studentMode && (m_disableUnsafeShortcuts || m_denyArbitraryFiles))){auto* open=new QShortcut(QKeySequence(Qt::CTRL|Qt::Key_O),this);connect(open,&QShortcut::activated,this,&MainWindow::openVideo);}}
+void MainWindow::openVideo(){if(m_studentMode && m_denyArbitraryFiles)return;const QString path=QFileDialog::getOpenFileName(this,tr("打开视频"),QString(),tr("视频文件 (*.mp4 *.mkv *.mov *.avi *.webm);;所有文件 (*)"));if(path.isEmpty())return;m_playlist->add(path);refreshPlaylistWidget();loadVideoPath(path);}
+void MainWindow::openVideos(){if(m_studentMode && m_denyArbitraryFiles)return;const QStringList paths=QFileDialog::getOpenFileNames(this,tr("添加视频"),QString(),tr("视频文件 (*.mp4 *.mkv *.mov *.avi *.webm);;所有文件 (*)"));if(paths.isEmpty())return;for(const QString& path:paths)m_playlist->add(path);refreshPlaylistWidget();if(m_currentPath.isEmpty())loadVideoPath(paths.first());}
 void MainWindow::playPlaylistItem(QListWidgetItem* item){if(!item)return;const int index=m_playlistWidget->row(item);if(index>=0&&index<m_playlist->size())loadVideoPath(m_playlist->at(index));}
 void MainWindow::loadVideoPath(const QString& path){if(!m_player||path.isEmpty())return;m_currentPath=path;if(!m_player->open(path)){QMessageBox::warning(this,tr("打开失败"),tr("无法打开该视频。"));return;}m_player->setVideoOutput(m_video->nativeVideoId());m_player->play();applyVideoProfile(path);refreshPlaylistWidget();}
 void MainWindow::playNextItem(){if(!m_playlist||!m_playlistWidget||m_playlist->size()==0)return;const int current=m_playlist->indexOf(m_currentPath);const int next=current+1;if(current>=0&&next<m_playlist->size())loadVideoPath(m_playlist->at(next));else{refreshPlaylistWidget();updatePlaybackUi();}}
@@ -103,3 +121,50 @@ void MainWindow::updatePlaybackUi(){if(!m_player||!m_toolbar)return;m_toolbar->s
 void MainWindow::seekVideo(qint64 milliseconds){if(m_player)m_player->seek(milliseconds);}void MainWindow::setPlaybackRate(float rate){if(m_player)m_player->setRate(rate);}void MainWindow::setVolume(int volume){if(m_player)m_player->setVolume(volume);}void MainWindow::toggleFullscreen(){if(isFullScreen())showNormal();else showFullScreen();}void MainWindow::toggleSmartInvert(){setSmartInvertEnabled(!m_smartInvert);}
 void MainWindow::setSmartInvertEnabled(bool enabled){m_smartInvert=enabled;m_framePipeline->setEnabled(enabled);if(m_player)m_player->setFrameProcessingEnabled(enabled);if(m_video){if(!enabled)m_video->clearProcessedFrame();m_video->update();}if(!m_currentPath.isEmpty()){m_profiles->profileFor(m_currentPath).smartInvert=enabled;m_profiles->save();}}
 void MainWindow::applyVideoDisplayGeometry(){if(m_video)m_video->update();}
+
+void MainWindow::applyStudentPolicy()
+{
+    const QStringList args = QCoreApplication::arguments();
+    const int index = args.indexOf(QStringLiteral("--student-policy"));
+    if(index < 0 || index + 1 >= args.size()) return;
+    QFile file(args.at(index + 1));
+    if(!file.open(QIODevice::ReadOnly) || file.size() > 16384) return;
+    QJsonParseError error;
+    const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
+    if(error.error != QJsonParseError::NoError || !doc.isObject()) return;
+    const auto root = doc.object();
+    if(root.size()!=6 || root.value("schemaVersion").toInt()!=1 ||
+       root.value("product").toString()!=QStringLiteral("MosuanPlayer") ||
+       root.value("mode").toString()!=QStringLiteral("student") ||
+       root.value("enforcementStatus").toString()!=QStringLiteral("not-integrated") ||
+       !root.value("note").isString()) return;
+    const auto restrictions = root.value("restrictions");
+    if(!restrictions.isObject()) return;
+    const auto flags = restrictions.toObject();
+    const QStringList keys = {"disableContextMenu", "disableUnsafeShortcuts",
+                              "denyArbitraryFileBrowsing", "allowPlaybackShortcuts"};
+    if(flags.size()!=keys.size()) return;
+    for(const auto& key : keys) if(!flags.value(key).isBool()) return;
+    m_studentMode=true;
+    m_disableContextMenu=flags.value("disableContextMenu").toBool();
+    m_disableUnsafeShortcuts=flags.value("disableUnsafeShortcuts").toBool();
+    m_denyArbitraryFiles=flags.value("denyArbitraryFileBrowsing").toBool();
+    m_allowPlaybackShortcuts=flags.value("allowPlaybackShortcuts").toBool();
+    setWindowTitle(tr("Mosuan Player · 学生模式预览（非安全锁定）"));
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if(!m_studentMode) return QMainWindow::eventFilter(watched,event);
+    auto* widget=qobject_cast<QWidget*>(watched);
+    if(widget && (widget==this || isAncestorOf(widget))) {
+        if(m_disableContextMenu && event->type()==QEvent::ContextMenu) return true;
+        if(m_disableUnsafeShortcuts && (event->type()==QEvent::KeyPress || event->type()==QEvent::ShortcutOverride)) {
+            const auto* key=static_cast<QKeyEvent*>(event);
+            if((key->modifiers() & Qt::ControlModifier) &&
+               (key->key()==Qt::Key_O || key->key()==Qt::Key_S || key->key()==Qt::Key_P ||
+                key->key()==Qt::Key_N)) return true;
+        }
+    }
+    return QMainWindow::eventFilter(watched,event);
+}
